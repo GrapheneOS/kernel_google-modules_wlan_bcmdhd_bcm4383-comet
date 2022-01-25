@@ -2611,8 +2611,8 @@ static struct dhd_attr dhd_attr_dhd_debug_data =
 __ATTR(dump_stateinfo, 0660, dhd_debug_dump_stateinfo, NULL);
 
 #ifdef WL_CFG80211
-#define _S(x) #x
-#define S(x) _S(x)
+#define __S(x) #x
+#define S(x) __S(x)
 #define SUBLOGLEVEL 20
 #define SUBLOGLEVELZ ((SUBLOGLEVEL) + (1))
 static const struct {

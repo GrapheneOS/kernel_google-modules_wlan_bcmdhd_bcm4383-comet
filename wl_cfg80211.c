@@ -1561,8 +1561,8 @@ static const rsn_akm_wpa_auth_entry_t rsn_akm_wpa_auth_lookup_tbl[] = {
 #define BUFSZ 8
 #define BUFSZN	BUFSZ + 1
 
-#define _S(x) #x
-#define S(x) _S(x)
+#define __S(x) #x
+#define S(x) __S(x)
 
 #define SOFT_AP_IF_NAME         "swlan0"
 
