@@ -8959,6 +8959,7 @@ wl_android_set_miracast(struct net_device *dev, char *command)
 		/* Source mode shares most configurations with sink mode.
 		 * Fall through here to avoid code duplication
 		 */
+		fallthrough;
 	case MIRACAST_MODE_SINK:
 		/* disable internal roaming */
 		config.iovar = "roam_off";

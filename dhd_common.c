@@ -5553,7 +5553,7 @@ wl_show_roam_cache_update_event(const char *name, uint status,
 				candidate_info->ctl_channel = wf_channel2chspec(
 					candidate_info->ctl_channel, WL_CHANSPEC_BW_20);
 			}
-			/* fall through */
+				fallthrough;
 			case WL_RMC_RPT_XTLV_CANDIDATE_INFO_V2:
 			case WL_RMC_RPT_XTLV_USER_CACHE_INFO_V2:
 			{
@@ -7158,7 +7158,7 @@ wl_process_host_event(dhd_pub_t *dhd_pub, int *ifidx, void *pktdata, uint pktlen
 				event->ifname));
 		}
 #endif /* PCIE_FULL_DONGLE */
-		/* falls through */
+		fallthrough;
 	case WLC_E_DEAUTH:
 	case WLC_E_DEAUTH_IND:
 	case WLC_E_DISASSOC:
@@ -7205,7 +7205,7 @@ wl_process_host_event(dhd_pub_t *dhd_pub, int *ifidx, void *pktdata, uint pktlen
 			ifp->post_roam_evt = FALSE;
 		}
 #endif /* DHD_POST_EAPOL_M1_AFTER_ROAM_EVT */
-		/* fall through */
+		fallthrough;
 	default:
 		*ifidx = dhd_ifname2idx(dhd_pub->info, event->ifname);
 		/* push up to external supp/auth */

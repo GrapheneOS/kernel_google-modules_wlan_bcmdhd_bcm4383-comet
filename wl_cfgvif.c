@@ -717,8 +717,8 @@ wl_cfg80211_disc_if_mgmt(struct bcm_cfg80211 *cfg,
 				* Intentional fall through to default policy
 				* as for AP and associated ifaces, both are same
 				*/
+				fallthrough;
 			}
-			/* falls through */
 			case WL_IF_POLICY_DEFAULT: {
 				 if (sec_wl_if_type == WL_IF_TYPE_AP) {
 					WL_INFORM_MEM(("AP is active, cant support new iface\n"));
@@ -1475,6 +1475,7 @@ wl_cfg80211_change_virtual_iface(struct wiphy *wiphy, struct net_device *ndev,
 		if (ndev->ieee80211_ptr->iftype == NL80211_IFTYPE_STATION) {
 			break;
 		}
+		fallthrough;
 #endif /* WL_CFG80211_MONITOR */
 	case NL80211_IFTYPE_WDS:
 	case NL80211_IFTYPE_MESH_POINT:
