@@ -9778,7 +9778,7 @@ deinit_dhd_timeouts(dhd_pub_t *pub)
 }
 
 static void
-dhd_cmd_timeout(void *ctx)
+dhd_cmd_timeout(ulong ctx)
 {
 	dhd_pub_t *pub = (dhd_pub_t *)ctx;
 	unsigned long flags;
@@ -9917,7 +9917,7 @@ __dhd_stop_join_timer(dhd_pub_t *pub)
 }
 
 static void
-dhd_join_timeout(void *ctx)
+dhd_join_timeout(ulong ctx)
 {
 	dhd_pub_t *pub = (dhd_pub_t *)ctx;
 	unsigned long flags;
@@ -10042,7 +10042,7 @@ dhd_clear_join_error(dhd_pub_t *pub, uint32 mask)
 }
 
 static void
-dhd_scan_timeout(void *ctx)
+dhd_scan_timeout(ulong ctx)
 {
 	dhd_pub_t *pub = (dhd_pub_t *)ctx;
 	unsigned long flags;
@@ -10168,7 +10168,7 @@ exit_null:
 }
 
 static void
-dhd_bus_timeout(void *ctx)
+dhd_bus_timeout(ulong ctx)
 {
 	dhd_pub_t *pub = (dhd_pub_t *)ctx;
 	unsigned long flags;

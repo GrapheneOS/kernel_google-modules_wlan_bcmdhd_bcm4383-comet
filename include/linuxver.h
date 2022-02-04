@@ -381,17 +381,17 @@ typedef struct timer_list timer_list_compat_t;
 
 typedef struct timer_list_compat {
 	struct timer_list timer;
-	void *arg;
+	ulong arg;
 	void (*callback)(ulong arg);
 } timer_list_compat_t;
 
 extern void timer_cb_compat(struct timer_list *tl);
 
 #define init_timer_compat(timer_compat, cb, priv) \
-	(timer_compat)->arg = priv; \
+	(timer_compat)->arg = (ulong)priv; \
 	(timer_compat)->callback = cb; \
 	timer_setup(&(timer_compat)->timer, timer_cb_compat, 0);
-#define timer_set_private(timer_compat, priv) (timer_compat)->arg = priv
+#define timer_set_private(timer_compat, priv) (timer_compat)->arg = (ulong)priv
 #define timer_expires(timer_compat) (timer_compat)->timer.expires
 
 #define del_timer(t) del_timer(&((t)->timer))
