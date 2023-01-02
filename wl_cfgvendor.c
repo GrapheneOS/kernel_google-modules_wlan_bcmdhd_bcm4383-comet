@@ -7436,8 +7436,10 @@ exit:
 /* 11n/HT:   OFDM(12) + HT(16) rates = 28 (MCS0 ~ MCS15)
  * 11ac/VHT: OFDM(12) + VHT(12) x 2 nss = 36 (MCS0 ~ MCS11)
  * 11ax/HE:  OFDM(12) + HE(12) x 2 nss = 36 (MCS0 ~ MCS11)
+ * 11be/EHT:  OFDM(12) + EHT(14) x 2 nss = 40 (MCS0 ~ MCS13)
  */
-#define NUM_RATE 36
+#define NUM_RATE 40
+#define NUM_RATE_NONBE	36
 #define NUM_PEER 1
 #define NUM_CHAN 11
 #define HEADER_SIZE sizeof(ver_len)
@@ -7544,7 +7546,7 @@ wl_cfgvendor_get_radio_stats(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 
 	chan_stats_size = sizeof(wifi_channel_stat) * num_channels;
 	/* Radio stat field */
-	radio_stats_size = WL_RADIOSTAT_SLICE_INDEX_MAX*(offsetof(wifi_radio_stat, channels)) +
+	radio_stats_size = cfg->num_radios*(offsetof(wifi_radio_stat, channels)) +
 			chan_stats_size;
 	radio_stat_ptr = (char*)MALLOCZ(cfg->osh, radio_stats_size);
 	if (radio_stat_ptr == NULL) {
@@ -7608,12 +7610,15 @@ wl_cfgvendor_get_radio_stats(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 			radio_h_v2[i].on_time_pno_scan =
 				(uint32)(radio_v2->on_time_pno_scan / 1000);
 			radio_h_v2[i].on_time_hs20 = radio_v2->on_time_hs20;
+			/* Adding all channels under Main slice
+			 * TODO: We may need to seggregate the channels per slice
+			 */
 			if (i == WL_RADIOSTAT_SLICE_INDEX_MAIN) {
-				radio_h_v2[i].num_channels = 0;
+				radio_h_v2[i].num_channels = num_channels;
 			} else if (i == WL_RADIOSTAT_SLICE_INDEX_AUX) {
 				radio_h_v2[i].num_channels = 0;
 			} else {
-				radio_h_v2[i].num_channels = num_channels;
+				radio_h_v2[i].num_channels = 0;
 			}
 
 			err = memcpy_s(out_radio_stat, avail_radio_stat_len,
@@ -7714,8 +7719,12 @@ static int wl_cfgvendor_get_cca_stats(struct bcm_cfg80211 *cfg,
 	}
 
 	chan_results = (cca_congest_ext_channel_req_v4_t *) iovresp;
+	/* V3 and V4 are same except for bandmask which is not used in out buffer
+	 * So out buffer & handling of out buffer is same for both versions
+	 */
 	if ((err == BCME_OK) &&
-			(dtoh16(chan_results->ver) == WL_CCA_EXT_REQ_VER_V4)) {
+			((dtoh16(chan_results->ver) == WL_CCA_EXT_REQ_VER_V4) ||
+			(dtoh16(chan_results->ver) == WL_CCA_EXT_REQ_VER_V3))) {
 		num_channels = dtoh16(chan_results->num_of_entries);
 		*no_of_entries = num_channels;
 		chan_stat_size = num_channels*sizeof(wifi_channel_stat);
@@ -7779,6 +7788,7 @@ static int wl_cfgvendor_lstats_get_info(struct wiphy *wiphy,
 	wl_bssload_t *bssload;
 	uint8 no_of_entries = 0;
 	uint rem_len = 0;
+	int bandmask = BANDMASK_2G | BANDMASK_5G;
 #else
 	/* cca_get_stats_ext iovar for Wifi channel statics */
 	cca_congest_ext_channel_req_v2_t *cca_v2_results = NULL;
@@ -7804,6 +7814,7 @@ static int wl_cfgvendor_lstats_get_info(struct wiphy *wiphy,
 	wifi_channel_stat cur_channel_stat;
 	int cur_chansp, cur_band;
 	chanspec_t cur_chanspec;
+	uint16 num_rate;
 
 	COMPAT_STRUCT_IFACE(wifi_iface_stat, iface);
 
@@ -7870,33 +7881,22 @@ static int wl_cfgvendor_lstats_get_info(struct wiphy *wiphy,
 		err = BCME_NOMEM;
 		goto exit;
 	}
-	bzero(chan_stats, chan_stats_size);
+	bzero(chan_stats, CHANINFO_LIST_BUF_SIZE);
 
 	rem_len = CHANINFO_LIST_BUF_SIZE;
 	all_chan_stats = chan_stats;
+#ifdef WL_6G_BAND
+	bandmask |= BANDMASK_6G;
+#endif /* WL_6G_BAND */
 	/* Query per band basis and grow chan_stats */
 	err = wl_cfgvendor_get_cca_stats(cfg, wdev, &chan_stats,
-		BANDMASK_2G | BANDMASK_5G, cur_band, &no_of_entries, &rem_len);
+		bandmask, cur_band, &no_of_entries, &rem_len);
 	if ((err != BCME_OK) && (err != BCME_UNSUPPORTED)) {
 		WL_ERR(("%s: failed to get cca_stats\n", __FUNCTION__));
 		err = -EINVAL;
 		goto exit;
 	}
 	num_channels = no_of_entries;
-
-#ifdef WL_6G_BAND
-	/* query for 6g band */
-	if (cfg->band_6g_supported) {
-		err = wl_cfgvendor_get_cca_stats(cfg, wdev, &chan_stats,
-			BANDMASK_6G, cur_band, &no_of_entries, &rem_len);
-		if ((err != BCME_OK) && (err != BCME_UNSUPPORTED)) {
-			WL_ERR(("%s: failed to get cca_stats\n", __FUNCTION__));
-			err = -EINVAL;
-			goto exit;
-		}
-		num_channels += no_of_entries;
-	}
-#endif /* WL_6G_BAND */
 #else
 	chan_stats_size = sizeof(wifi_channel_stat);
 	chan_stats = &cur_channel_stat;
@@ -8105,8 +8105,12 @@ static int wl_cfgvendor_lstats_get_info(struct wiphy *wiphy,
 	COMPAT_ASSIGN_VALUE(iface, beacon_rx, rxbeaconmbss);
 	COMPAT_ASSIGN_VALUE(iface, rssi_mgmt, scbval.val);
 	COMPAT_ASSIGN_VALUE(iface, num_peers, NUM_PEER);
-	COMPAT_ASSIGN_VALUE(iface, peer_info->num_rate, NUM_RATE);
-
+	if (FW_SUPPORTED(dhdp, eht)) {
+		num_rate = NUM_RATE;
+	} else {
+		num_rate = NUM_RATE_NONBE;
+	}
+	COMPAT_ASSIGN_VALUE(iface, peer_info->num_rate, num_rate);
 #ifdef LINKSTAT_EXT_SUPPORT
 	err = wldev_iovar_getbuf(inet_ndev, "bssload_report", NULL,
 		0, iovar_buf, WLC_IOCTL_MAXLEN, NULL);
@@ -8129,10 +8133,10 @@ static int wl_cfgvendor_lstats_get_info(struct wiphy *wiphy,
 	err = wldev_iovar_getbuf(inet_ndev, "ratestat", NULL, 0,
 		iovar_buf, WLC_IOCTL_MAXLEN, NULL);
 	if (err != BCME_OK && err != BCME_UNSUPPORTED) {
-		WL_ERR(("error (%d) - size = %zu\n", err, NUM_RATE*sizeof(wifi_rate_stat)));
+		WL_ERR(("error (%d) - size = %zu\n", err, num_rate*sizeof(wifi_rate_stat)));
 		goto exit;
 	}
-	for (i = 0; i < NUM_RATE; i++) {
+	for (i = 0; i < num_rate; i++) {
 		p_wifi_rate_stat =
 			(wifi_rate_stat *)(iovar_buf + i*sizeof(wifi_rate_stat));
 		p_wifi_rate_stat_v1 = (wifi_rate_stat_v1 *)output;
@@ -8160,7 +8164,7 @@ static int wl_cfgvendor_lstats_get_info(struct wiphy *wiphy,
 		sizeof(wifi_peer_info) +
 		NUM_PEER * (sizeof(wifi_peer_info) -
 		sizeof(wifi_rate_stat) +
-		NUM_RATE * sizeof(wifi_rate_stat_v1));
+		num_rate * sizeof(wifi_rate_stat_v1));
 
 	if (total_len > WLC_IOCTL_MAXLEN) {
 		WL_ERR(("Error! total_len:%d is unexpected value\n", total_len));
