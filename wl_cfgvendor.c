@@ -7431,8 +7431,7 @@ exit:
 }
 #endif /* WL_NAN */
 
-//#ifdef LINKSTAT_SUPPORT
-#if 0
+#ifdef LINKSTAT_SUPPORT
 /* 11n/HT:   OFDM(12) + HT(16) rates = 28 (MCS0 ~ MCS15)
  * 11ac/VHT: OFDM(12) + VHT(12) x 2 nss = 36 (MCS0 ~ MCS11)
  * 11ax/HE:  OFDM(12) + HE(12) x 2 nss = 36 (MCS0 ~ MCS11)
@@ -12859,8 +12858,7 @@ static struct wiphy_vendor_command wl_vendor_cmds [] = {
 		.maxattr = ANDR_WIFI_ATTRIBUTE_MAX
 #endif /* LINUX_VERSION >= 5.3 */
 	},
-//#ifdef LINKSTAT_SUPPORT
-#if 0
+#ifdef LINKSTAT_SUPPORT
 	{
 		{
 			.vendor_id = OUI_GOOGLE,

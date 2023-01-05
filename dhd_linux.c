@@ -16604,8 +16604,7 @@ dhd_dev_get_feature_set(struct net_device *dev)
 	feature_set |= WIFI_FEATURE_D2D_RTT;
 	feature_set |= WIFI_FEATURE_D2AP_RTT;
 #endif /* RTT_SUPPORT */
-//#ifdef LINKSTAT_SUPPORT
-#if 0
+#ifdef LINKSTAT_SUPPORT
 	feature_set |= WIFI_FEATURE_LINKSTAT;
 #endif /* LINKSTAT_SUPPORT */
 
