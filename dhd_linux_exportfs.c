@@ -2,7 +2,7 @@
  * Broadcom Dongle Host Driver (DHD), Linux-specific network interface
  * Basically selected code segments from usb-cdc.c and usb-rndis.c
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -785,19 +785,19 @@ set_sssr_enab(struct dhd_info *dev, const char *buf, size_t count)
 }
 
 static ssize_t
-show_fis_enab(struct dhd_info *dev, char *buf)
+show_fis_enab_always(struct dhd_info *dev, char *buf)
 {
 	ssize_t ret = 0;
 	unsigned long onoff;
 
-	onoff = fis_enab;
+	onoff = fis_enab_always;
 	ret = scnprintf(buf, PAGE_SIZE - 1, "%lu \n",
 		onoff);
 	return ret;
 }
 
 static ssize_t
-set_fis_enab(struct dhd_info *dev, const char *buf, size_t count)
+set_fis_enab_always(struct dhd_info *dev, const char *buf, size_t count)
 {
 	unsigned long onoff;
 
@@ -808,7 +808,7 @@ set_fis_enab(struct dhd_info *dev, const char *buf, size_t count)
 		return -EINVAL;
 	}
 
-	fis_enab = (uint)onoff;
+	fis_enab_always = (uint)onoff;
 
 	return count;
 }
@@ -1337,8 +1337,8 @@ static struct dhd_attr dhd_attr_sock_qos_unit_test =
 #ifdef DHD_SSSR_DUMP
 static struct dhd_attr dhd_attr_sssr_enab =
 	__ATTR(sssr_enab, 0660, show_sssr_enab, set_sssr_enab);
-static struct dhd_attr dhd_attr_fis_enab =
-	__ATTR(fis_enab, 0660, show_fis_enab, set_fis_enab);
+static struct dhd_attr dhd_attr_fis_enab_always =
+	__ATTR(fis_enab_always, 0660, show_fis_enab_always, set_fis_enab_always);
 #endif /* DHD_SSSR_DUMP */
 
 static struct dhd_attr dhd_attr_firmware_path =
@@ -2344,6 +2344,7 @@ dhd_set_fast_rpm_thresh(struct dhd_info *dev, const char *buf, size_t count)
 	dhd_fast_runtimepm_ms = val;
 	return count;
 }
+
 static struct dhd_attr dhd_attr_fast_rpm_thresh =
 __ATTR(fast_rpm_thresh, 0660, dhd_show_fast_rpm_thresh, dhd_set_fast_rpm_thresh);
 #endif /* RPM_FAST_TRIGGER */
@@ -2585,6 +2586,7 @@ dhd_debug_dump_stateinfo(struct dhd_info *dhd, char *buf)
 	buf[len] = '\0';
 	return len + 1;
 }
+
 static struct dhd_attr dhd_attr_dhd_debug_data =
 __ATTR(dump_stateinfo, 0660, dhd_debug_dump_stateinfo, NULL);
 
@@ -2797,58 +2799,11 @@ set_ptm_sync_periodic(struct dhd_info *dev, const char *buf, size_t count)
 	ptm_sync_periodic = val;
 	return count;
 }
+
 static struct dhd_attr dhd_att_ptm_sync_periodic =
 __ATTR(ptm_sync_periodic, 0660, show_ptm_sync_periodic,
 		set_ptm_sync_periodic);
 #endif /* PCIE_FULL_DONGLE */
-
-/* show the logger_qdump debug level */
-static ssize_t
-show_log_qdump(struct dhd_info *dev, char *buf)
-{
-	dhd_info_t *dhd = (dhd_info_t *)dev;
-	dhd_pub_t *dhdp;
-	ssize_t ret = 0;
-	unsigned long val;
-
-	if (!dhd) {
-		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
-		return -EINVAL;
-	}
-	dhdp = &dhd->pub;
-
-	val = dhd_log_get_qdump(dhdp->logger);
-	ret = scnprintf(buf, PAGE_SIZE - 1, "%lu \n", val);
-	return ret;
-}
-
-/* set the logger_qdump debug level */
-static ssize_t
-set_log_qdump(struct dhd_info *dev, const char *buf, size_t count)
-{
-	dhd_info_t *dhd = (dhd_info_t *)dev;
-	dhd_pub_t *dhdp;
-	int val;
-
-	if (!dhd) {
-		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
-		return -EINVAL;
-	}
-
-	dhdp = &dhd->pub;
-	val = (uint32)bcm_atoi(buf);
-	if (val <= 0)
-	{
-		DHD_ERROR(("%s : invalid log qdump %u\n",
-			__FUNCTION__, val));
-		return count;
-	}
-
-	dhd_log_set_qdump(dhdp->logger, val);
-	return count;
-}
-static struct dhd_attr dhd_att_log_qdump =
-__ATTR(logger_qdump, 0660, show_log_qdump, set_log_qdump);
 
 extern bool arp_print_enabled;
 static ssize_t
@@ -2953,7 +2908,7 @@ static struct attribute *default_file_attrs[] = {
 #endif /* DHD_QOS_ON_SOCK_FLOW */
 #ifdef DHD_SSSR_DUMP
 	&dhd_attr_sssr_enab.attr,
-	&dhd_attr_fis_enab.attr,
+	&dhd_attr_fis_enab_always.attr,
 #endif /* DHD_SSSR_DUMP */
 	&dhd_attr_firmware_path.attr,
 	&dhd_attr_nvram_path.attr,
@@ -2998,7 +2953,6 @@ static struct attribute *default_file_attrs[] = {
 #ifdef PCIE_FULL_DONGLE
 	&dhd_att_ptm_sync_periodic.attr,
 #endif /* PCIE_FULL_DONGLE */
-	&dhd_att_log_qdump.attr,
 	&dhd_attr_tcm_test_mode.attr,
 	&dhd_attr_arp_print.attr,
 	NULL
@@ -3713,6 +3667,206 @@ static struct kobj_type dhd_dpc_bounds_ktype = {
  * *************************************
  */
 
+/*
+ * ************ DHD LOGGER *************
+ */
+/* show the DHD logger qdump debug level */
+static ssize_t
+dhd_logger_show_qdump(struct dhd_info *dev, char *buf)
+{
+	dhd_info_t *dhd = (dhd_info_t *)dev;
+	dhd_pub_t *dhdp;
+	ssize_t ret = 0;
+	uint32 val;
+
+	if (!dhd) {
+		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
+		return -EINVAL;
+	}
+	dhdp = &dhd->pub;
+	val = dhd_log_get_qdump(dhdp->logger);
+	ret = scnprintf(buf, PAGE_SIZE - 1, "%u \n", val);
+	return ret;
+}
+
+/* set the DHD logger qdump debug level */
+static ssize_t
+dhd_logger_set_qdump(struct dhd_info *dev, const char *buf, size_t count)
+{
+	dhd_info_t *dhd = (dhd_info_t *)dev;
+	dhd_pub_t *dhdp;
+	uint32 val;
+
+	if (!dhd) {
+		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
+		return -EINVAL;
+	}
+
+	dhdp = &dhd->pub;
+	val = (uint32)bcm_strtoul(buf, NULL, 16);
+	dhd_log_set_qdump(dhdp->logger, val);
+	return count;
+}
+
+static struct dhd_attr dhd_logger_attr_qdump =
+__ATTR(qdump, 0660, dhd_logger_show_qdump, dhd_logger_set_qdump);
+
+/* show the DHD logger route_events value. */
+static ssize_t
+dhd_logger_show_route_events(struct dhd_info *dev, char *buf)
+{
+	dhd_info_t *dhd = (dhd_info_t *)dev;
+	dhd_pub_t *dhdp;
+	ssize_t ret = 0;
+	bool route_events;
+
+	if (!dhd) {
+		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
+		return -EINVAL;
+	}
+	dhdp = &dhd->pub;
+	route_events = dhd_log_show_route_events(dhdp->logger);
+	ret = scnprintf(buf, PAGE_SIZE - 1, "%d\n", route_events);
+	return ret;
+}
+
+/* set the DHD logger route_events level */
+static ssize_t
+dhd_logger_set_route_events(struct dhd_info *dev, const char *buf, size_t count)
+{
+	dhd_info_t *dhd = (dhd_info_t *)dev;
+	dhd_pub_t *dhdp;
+	unsigned long route_events;
+
+	if (!dhd) {
+		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
+		return -EINVAL;
+	}
+
+	dhdp = &dhd->pub;
+	route_events = bcm_strtoul(buf, NULL, 10);
+	if (route_events != 0 && route_events != 1) {
+		return -EINVAL;
+	}
+	dhd_log_set_route_events(dhdp->logger, route_events);
+	return count;
+}
+
+static struct dhd_attr dhd_logger_attr_route_events =
+__ATTR(route_events, 0660, dhd_logger_show_route_events, dhd_logger_set_route_events);
+
+/* show the DHD logger filter value. */
+static ssize_t
+dhd_logger_show_filter(struct dhd_info *dev, char *buf)
+{
+	dhd_info_t *dhd = (dhd_info_t *)dev;
+	dhd_pub_t *dhdp;
+	ssize_t ret = 0;
+	uint32 filter;
+
+	if (!dhd) {
+		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
+		return -EINVAL;
+	}
+	dhdp = &dhd->pub;
+	filter = dhd_log_show_filter(dhdp->logger);
+	ret = scnprintf(buf, PAGE_SIZE - 1, "0x%x \n", filter);
+	return ret;
+}
+
+/* set the DHD logger filter level */
+static ssize_t
+dhd_logger_set_filter(struct dhd_info *dev, const char *buf, size_t count)
+{
+	dhd_info_t *dhd = (dhd_info_t *)dev;
+	dhd_pub_t *dhdp;
+	uint32 filter;
+
+	if (!dhd) {
+		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
+		return -EINVAL;
+	}
+
+	dhdp = &dhd->pub;
+	filter = (uint32)bcm_strtoul(buf, NULL, 16);
+	dhd_log_set_filter(dhdp->logger, filter);
+	return count;
+}
+
+static struct dhd_attr dhd_logger_attr_filter =
+__ATTR(filter, 0660, dhd_logger_show_filter, dhd_logger_set_filter);
+
+static struct attribute *debug_logger_attrs[] = {
+	&dhd_logger_attr_qdump.attr,
+	&dhd_logger_attr_filter.attr,
+	&dhd_logger_attr_route_events.attr,
+	NULL
+};
+
+#define to_dhd_logger(k) container_of(k, struct dhd_info, dhd_logger_kobj)
+
+/*
+ * wifi/logger kobject show function, the "attr" attribute specifices to which
+ * node under "sys/wifi/logger" the show function is called.
+ */
+static ssize_t dhd_logger_show(struct kobject *kobj, struct attribute *attr, char *buf)
+{
+	dhd_info_t *dhd;
+	struct dhd_attr *d_attr;
+	int ret;
+
+	GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
+	dhd = to_dhd_logger(kobj);
+	d_attr = to_attr(attr);
+	GCC_DIAGNOSTIC_POP();
+
+	if (d_attr->show)
+		ret = d_attr->show(dhd, buf);
+	else
+		ret = -EIO;
+
+	return ret;
+}
+
+/*
+ * wifi/logger kobject store function, the "attr" attribute specifices to which
+ * node under "sys/wifi/logger" the store function is called.
+ */
+static ssize_t dhd_logger_store(struct kobject *kobj, struct attribute *attr,
+		const char *buf, size_t count)
+{
+	dhd_info_t *dhd;
+	struct dhd_attr *d_attr;
+	int ret;
+
+	GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
+	dhd = to_dhd_logger(kobj);
+	d_attr = to_attr(attr);
+	GCC_DIAGNOSTIC_POP();
+
+	if (d_attr->store)
+		ret = d_attr->store(dhd, buf, count);
+	else
+		ret = -EIO;
+
+	return ret;
+
+}
+
+static struct sysfs_ops dhd_sysfs_logger_ops = {
+	.show = dhd_logger_show,
+	.store = dhd_logger_store,
+};
+
+static struct kobj_type dhd_logger_ktype = {
+	.sysfs_ops = &dhd_sysfs_logger_ops,
+	.default_attrs = debug_logger_attrs,
+};
+
+/*
+ * *************************************
+ */
+
 /* Create a kobject and attach to sysfs interface */
 int dhd_sysfs_init(dhd_info_t *dhd)
 {
@@ -3762,6 +3916,17 @@ int dhd_sysfs_init(dhd_info_t *dhd)
 	kobject_uevent(&dhd->dhd_dpc_bounds_kobj, KOBJ_ADD);
 	dhd->dhd_dpc_bounds_kobj_inited = TRUE;
 
+	/* DHD Logger */
+	ret  = kobject_init_and_add(&dhd->dhd_logger_kobj,
+			&dhd_logger_ktype, &dhd->dhd_kobj, "logger");
+	if (ret) {
+		kobject_put(&dhd->dhd_logger_kobj);
+		DHD_ERROR(("%s(): Unable to allocate kobject for 'logger'\r\n", __FUNCTION__));
+		return ret;
+	}
+	kobject_uevent(&dhd->dhd_logger_kobj, KOBJ_ADD);
+	dhd->dhd_logger_kobj_inited = TRUE;
+
 	return ret;
 }
 
@@ -3784,6 +3949,12 @@ void dhd_sysfs_exit(dhd_info_t *dhd)
 	if (dhd->dhd_dpc_bounds_kobj_inited) {
 		kobject_put(&dhd->dhd_dpc_bounds_kobj);
 		dhd->dhd_dpc_bounds_kobj_inited = FALSE;
+	}
+
+	/* DHD Logger */
+	if (dhd->dhd_logger_kobj_inited) {
+		kobject_put(&dhd->dhd_logger_kobj);
+		dhd->dhd_logger_kobj_inited = FALSE;
 	}
 
 	/* Release the kobject */

@@ -1,7 +1,7 @@
 /*
  * Wifi Virtual Interface implementaion
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -284,5 +284,10 @@ extern void wl_mlo_update_linkaddr(wl_mlo_config_v1_t *mlo_config);
 extern s32
 wl_cfg80211_ml_ap_link_add(struct bcm_cfg80211 *cfg, struct wireless_dev *wdev,
 	const wl_event_msg_t *e, void *data);
+extern chanspec_t wl_mlo_get_primary_sta_chspec(struct bcm_cfg80211 *cfg);
 #endif /* WL_MLO */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
+void
+wl_cfgvif_delayed_remove_iface_work(struct work_struct *work);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0) */
 #endif /* _wl_cfgvif_h_ */

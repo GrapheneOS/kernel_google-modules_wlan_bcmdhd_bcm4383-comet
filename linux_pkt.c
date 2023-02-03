@@ -1,7 +1,7 @@
 /*
  * Linux Packet (skb) interface
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -294,10 +294,11 @@ BCMFASTPATH(linux_pktget)(osl_t *osh, uint len)
 #ifdef BCMDBG_PKT
 	unsigned long flags;
 #endif
-	uchar num = 0;
+	uint num = 0u;
 	if (lmtest != FALSE) {
+		/* get a byte length random number */
 		get_random_bytes(&num, sizeof(uchar));
-		if ((num + 1) <= (256 * lmtest / 100))
+		if ((num + 1u) <= (256u * lmtest / 100u))
 			return NULL;
 	}
 

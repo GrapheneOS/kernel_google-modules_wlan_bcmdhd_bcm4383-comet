@@ -4,7 +4,7 @@
  * Provides type definitions and function prototypes used to link the
  * DHD OS, bus, and protocol modules.
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -303,6 +303,8 @@ extern int dhd_bus_get_linkdown(dhd_pub_t *dhdp);
 extern void dhd_bus_inform_ep_loaded_to_rc(dhd_pub_t *dhdp, bool up);
 #endif /* CONFIG_ARCH_MSM  && CONFIG_SEC_PCIE_L1SS */
 extern int dhd_bus_checkdied(struct dhd_bus *bus, char *data, uint size);
+void
+dhd_prot_get_driver_state(dhd_pub_t *dhdp, driver_state_t *driver_state);
 #else
 #define dhd_bus_dump_console_buffer(x)
 static INLINE void dhd_bus_intr_count_dump(dhd_pub_t *dhdp) { UNUSED_PARAMETER(dhdp); }

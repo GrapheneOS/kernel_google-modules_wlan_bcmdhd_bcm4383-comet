@@ -1,7 +1,7 @@
 /*
  * bcmevent read-only data shared by kernel or app layers
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -403,7 +403,8 @@ is_wlc_event_frame(void *pktdata, uint pktlen, uint16 exp_usr_subtype,
 
 		if (out_event) {
 			/* ensure BRCM event pkt aligned */
-			memcpy(&out_event->event, &bcm_event->event, sizeof(wl_event_msg_t));
+			(void)memcpy_s(&out_event->event, sizeof(out_event->event),
+				&bcm_event->event, sizeof(out_event->event));
 		}
 
 		break;
@@ -431,8 +432,9 @@ is_wlc_event_frame(void *pktdata, uint pktlen, uint16 exp_usr_subtype,
 
 		if (out_event) {
 			/* ensure BRCM dngl event pkt aligned */
-			memcpy(&out_event->dngl_event, &((bcm_dngl_event_t *)pktdata)->dngl_event,
-				sizeof(bcm_dngl_event_msg_t));
+			(void)memcpy_s(&out_event->dngl_event, sizeof(out_event->dngl_event),
+				&((bcm_dngl_event_t *)pktdata)->dngl_event,
+				sizeof(out_event->dngl_event));
 		}
 
 		break;

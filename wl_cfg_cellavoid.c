@@ -1,7 +1,7 @@
 /*
  * Cellular channel avoidance implementation
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -901,7 +901,9 @@ wl_cellavoid_verify_avail_chan_list(struct bcm_cfg80211 *cfg, wl_cellavoid_info_
 				(((wl_chanspec_list_v1_t *)dngl_chan_list)->chspecs[i].chaninfo);
 				restrict_chan = ((chaninfo & WL_CHAN_RADAR) ||
 					(chaninfo & WL_CHAN_PASSIVE) ||
-					(chaninfo & WL_CHAN_CLM_RESTRICTED));
+					(chaninfo & WL_CHAN_CLM_RESTRICTED) ||
+					(chaninfo & WL_CHAN_INDOOR_ONLY) ||
+					(chaninfo & WL_CHAN_P2P_PROHIBITED));
 			}
 
 			if ((!restrict_chan) && (chan_info->chanspec == chanspec)) {
@@ -1386,7 +1388,7 @@ wl_cellavoid_find_ap_chan_info(struct bcm_cfg80211 *cfg, chanspec_t ap_chspec,
 			 * Skip DFS case
 			 */
 			WL_INFORM_MEM(("STA in the another core. band %d\n", csa_target_band));
-			if (!is_chanspec_dfs(cfg, sta_chspec)) {
+			if (!wl_is_chanspec_restricted(cfg, sta_chspec)) {
 				chan_info = wl_cellavoid_find_chinfo_fromchspec(cfg->cellavoid_info,
 					sta_chspec);
 			}

@@ -1,7 +1,7 @@
 /*
  * Trace messages sent over HBUS
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -35,8 +35,7 @@
 
 enum msgtrace_hdr_type {
 	MSGTRACE_HDR_TYPE_MSG = 0u,
-	MSGTRACE_HDR_TYPE_LOG = 1u,
-	MSGTRACE_HDR_TYPE_COEX_LOG = 2u
+	MSGTRACE_HDR_TYPE_LOG = 1u
 };
 
 /* Message trace header */

@@ -1,7 +1,7 @@
 /*
  * EVENT_LOG system definitions
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -221,8 +221,7 @@ typedef struct event_log_set {
 	uint32 blockcount;		/* Number of blocks */
 	uint16 logtrace_count;		/* Last count for logtrace */
 	uint16 blockfill_count;		/* Fill count for logtrace */
-	bool is_shdw_set;		/* true if log set is a shadow set */
-	uint8 pad[3];			/* explicit padding */
+	uint32 reserved;		/* Reserved */
 	uint32 cyclecount;		/* Cycles at last timestamp event */
 	event_log_set_destination_t destination;
 	uint16 size;			/* same size for all buffers in one  set */
@@ -316,9 +315,9 @@ extern bool d3_preserve_enab;
 #if defined(ROM_ENAB_RUNTIME_CHECK)
 	#define D3_PRESERVE_ENAB()   (d3_preserve_enab)
 #elif defined(EVENTLOG_D3_PRESERVE_DISABLED)
-	#define D3_PRESERVE_ENAB()   (0)
+	#define D3_PRESERVE_ENAB()   (FALSE)
 #else
-	#define D3_PRESERVE_ENAB()   (1)
+	#define D3_PRESERVE_ENAB()   (TRUE)
 #endif
 
 #if defined(EVENTLOG_PRSV_PERIODIC)
@@ -326,9 +325,9 @@ extern bool prsv_periodic_enab;
 #if defined(ROM_ENAB_RUNTIME_CHECK)
 	#define PRSV_PRD_ENAB()   (prsv_periodic_enab)
 #elif defined(EVENTLOG_PRSV_PERIODIC_DISABLED)
-	#define PRSV_PRD_ENAB()   (0)
+	#define PRSV_PRD_ENAB()   (FALSE)
 #else
-	#define PRSV_PRD_ENAB()   (1)
+	#define PRSV_PRD_ENAB()   (TRUE)
 #endif
 #endif /* EVENTLOG_PRSV_PERIODIC */
 
@@ -739,7 +738,7 @@ extern uint32 event_log_get_maxsets(void);
 event_log_block_t * event_log_block_get_cur(int set);
 
 /* API to notify event log framework that cur_block of the specific set is filled */
-void event_log_shadow_set_post(int set);
+void event_log_shadow_set_post(int set, uint16 count);
 
 /* For all other non-logtrace consumers */
 extern int event_log_set_is_valid(int set);

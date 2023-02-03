@@ -1,7 +1,7 @@
 /*
  * log_dump - debugability support for dumping logs to file
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -695,6 +695,9 @@ dhd_get_init_dump_len(void *ndev, dhd_pub_t *dhdp, int section)
 	}
 
 	if (!dhdp)
+		return length;
+
+	if (!dhdp->ewp_dacs_fw_enable)
 		return length;
 
 	switch (section) {
@@ -2010,6 +2013,7 @@ dhd_log_dump_deinit(dhd_pub_t *dhd)
 		VMFREE(dhd->osh, dhd->ewphw_initlog_buf, dhd->ewphw_buf_totlen);
 		dhd->ewphw_initlog_buf = NULL;
 	}
+	dhd->ewp_dacs_fw_enable = FALSE;
 #endif /* EWP_DACS */
 
 #ifdef EWP_ECNTRS_LOGGING
@@ -2157,6 +2161,23 @@ dhd_log_dump_vendor_trigger(dhd_pub_t *dhd_pub)
 	return;
 }
 
+#ifdef DEBUGABILITY
+/* coredump triggered by host/user */
+void
+dhd_coredump_trigger(dhd_pub_t *dhdp)
+{
+	if (!dhdp) {
+		DHD_ERROR(("dhdp is NULL !\n"));
+		return;
+	}
+
+#if (defined(BCMPCIE) || defined(BCMSDIO)) && defined(DHD_FW_COREDUMP)
+	dhdp->memdump_type = DUMP_TYPE_COREDUMP_BY_USER;
+	dhd_bus_mem_dump(dhdp);
+#endif /* BCMPCIE && DHD_FW_COREDUMP */
+}
+#endif /* DEBUGABILITY */
+
 void
 dhd_log_dump_trigger(dhd_pub_t *dhdp, int subcmd)
 {
@@ -2228,10 +2249,6 @@ dhd_log_dump_trigger(dhd_pub_t *dhdp, int subcmd)
 	dhdp->memdump_type = DUMP_TYPE_BY_SYSDUMP;
 	dhd_bus_mem_dump(dhdp);
 #endif /* BCMPCIE && DHD_FW_COREDUMP */
-
-#if defined(DHD_PKT_LOGGING) && defined(DHD_DUMP_FILE_WRITE_FROM_KERNEL)
-	dhd_schedule_pktlog_dump(dhdp);
-#endif /* DHD_PKT_LOGGING && DHD_DUMP_FILE_WRITE_FROM_KERNEL */
 }
 
 

@@ -1,6 +1,6 @@
 # bcmdhd
 #
-# Copyright (C) 2022, Broadcom.
+# Copyright (C) 2023, Broadcom.
 #
 #      Unless you and Broadcom execute a separate written software license
 # agreement governing use of this software, this software is licensed to you
@@ -196,6 +196,7 @@ DHDCFLAGS += -DRTT_GEOFENCE_CONT
 
 #Debug flag
 ifneq ($(CONFIG_FIB_RULES),)
+    DHDCFLAGS += -DHAL_DEBUGABILITY
     ifneq ($(CONFIG_SOC_GOOGLE),)
 	DHDCFLAGS += -DDEBUGABILITY
 	DHDCFLAGS += -DDEBUGABILITY_DISABLE_MEMDUMP
@@ -235,6 +236,14 @@ DHDCFLAGS += -DAPSTA_BLOCK_ARP_DURING_DHCP
 # Bypass wpa_supplicant's BSSID selection
 DHDCFLAGS += -DWL_SKIP_CONNECT_HINTS
 
+# Dynamic indoor policy
+DHDCFLAGS += -DWL_DYNAMIC_INDOOR_POLICY
+# Enable the below flag after supplicant support for indoor flag has been added
+# DHDCFLAGS += -DUSE_INDOOR_CHAN_FLAG
+# Comment out below flag after HAL Android interface is integrated. This is enabled
+# by default for SVT validation.
+DHDCFLAGS += -DDYN_INDOOR_ENABLED_BY_DEFAULT
+
 ifneq ($(CONFIG_BCMDHD_PCIE),)
 	DHDCFLAGS += -DWLAN_ACCEL_BOOT
     # Enable Tx checksum offloads
@@ -251,10 +260,8 @@ ifneq ($(CONFIG_BCMDHD_PCIE),)
     ifneq ($(CONFIG_ARCH_HISI),)
         DHDCFLAGS += -DDHD_SSSR_DUMP_BEFORE_SR
     endif
-    # Recover timeouts
-      DHDCFLAGS += -DDHD_RECOVER_TIMEOUT
     # Enable FIS Dump
-    # DHDCFLAGS += -DDHD_FIS_DUMP
+    # DHDCFLAGS += -DDHD_FIS_DUMP_ALWAYS
     # Enable System Debug Trace Controller, Embedded Trace Buffer
       DHDCFLAGS += -DDHD_SDTC_ETB_DUMP
     # Enable SMD/Minidump collection
@@ -332,22 +339,22 @@ ifneq ($(CONFIG_SOC_GOOGLE),)
 	DHDCFLAGS += -DDHD_NON_DMA_M2M_CORRUPTION
 	# Detect FW Memory Corruption (MFG only)
 	DHDCFLAGS += -DDHD_FW_MEM_CORRUPTION
+        # Recover timeouts
+        DHDCFLAGS += -DDHD_RECOVER_TIMEOUT
 endif
 endif
 
-ifneq ($(CONFIG_FIB_RULES),)
-    # Debugability
-    # HAL File dump is supported only for customer builds
-    ifneq ($(CONFIG_SOC_GOOGLE),)
-	DHDCFLAGS += -DDHD_FILE_DUMP_EVENT
-	DHDCFLAGS += -DDHD_HAL_RING_DUMP
-	DHDCFLAGS += -DDHD_HAL_RING_DUMP_MEMDUMP
-	# Pixel platform only, to support ring data flushing properly
-	DHDCFLAGS += -DDHD_DUMP_START_COMMAND
-        # MLO related back port changes
-        DHDCFLAGS += -DWL_MLO_BKPORT
-	DHDCFLAGS := $(filter-out -DDHD_DUMP_FILE_WRITE_FROM_KERNEL ,$(DHDCFLAGS))
-    endif
+ifneq ($(CONFIG_SOC_GOOGLE),)
+    DHDCFLAGS += -DDHD_FILE_DUMP_EVENT
+    DHDCFLAGS += -DDHD_HAL_RING_DUMP
+    DHDCFLAGS += -DDHD_HAL_RING_DUMP_MEMDUMP
+    # Pixel platform only, to support ring data flushing properly
+    DHDCFLAGS += -DDHD_DUMP_START_COMMAND
+    # MLO related back port changes
+    DHDCFLAGS += -DWL_MLO_BKPORT
+    # CROSS AKM related back port changes
+    DHDCFLAGS += -DWL_CROSS_AKM_BKPORT
+    DHDCFLAGS := $(filter-out -DDHD_DUMP_FILE_WRITE_FROM_KERNEL ,$(DHDCFLAGS))
 endif
 
 # CUSTOMER2 flags
@@ -659,6 +666,8 @@ DHDCFLAGS += -DWL_NAN_INSTANT_MODE
 
 DHDCFLAGS += -DFTM
 
+DHDCFLAGS += -DDHD_RTT_USE_FTM_RANGE
+
 DHDCFLAGS += -DQOS_MAP_SET
 DHDCFLAGS += -DDHD_DSCP_POLICY
 
@@ -896,6 +905,8 @@ ifneq ($(CONFIG_SOC_GOOGLE),)
 	DHDCFLAGS += -DLB_RXP_STOP_THR=500 -DLB_RXP_STRT_THR=499
 	# Dongle init fail
 	DHDCFLAGS += -DPOWERUP_MAX_RETRY=0
+	# Increase assoc beacon wait time
+	DHDCFLAGS += -DDEFAULT_RECREATE_BI_TIMEOUT=40
     # Add chip specific suffix to the output on customer release
     ifneq ($(filter y, $(CONFIG_BCM4389)),)
 	    BCM_WLAN_CHIP_SUFFIX = 4389
@@ -913,7 +924,7 @@ ifneq ($(CONFIG_SOC_GOOGLE),)
 	    DHDCFLAGS += -DBCMPCI_NOOTP_DEV_ID=0x4383 -DBCM4383_CHIP_DEF
     endif
     ifneq ($(CONFIG_BCMDHD_PCIE),)
-    ifneq ($(CONFIG_SOC_GS201),)
+    ifneq ($(filter y, $(CONFIG_SOC_GS201) $(CONFIG_SOC_ZUMA)),)
 	DHDCFLAGS += -DPCIE_CPL_TIMEOUT_RECOVERY
     endif
     endif

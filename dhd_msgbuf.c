@@ -3,7 +3,7 @@
  * Provides type definitions and function prototypes used to link the
  * DHD OS, bus, and protocol modules.
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1152,10 +1152,9 @@ static void dhd_prot_detach_edl_rings(dhd_pub_t *dhd);
 static void dhd_prot_detach_md_rings(dhd_pub_t *dhd);
 static void dhd_prot_process_d2h_host_ts_complete(dhd_pub_t *dhd, void* buf);
 static void dhd_prot_process_snapshot_complete(dhd_pub_t *dhd, void *buf);
-
 #ifdef DHD_TIMESYNC
 extern void dhd_parse_proto(uint8 *pktdata, dhd_pkt_parse_t *parse);
-#endif
+#endif /* DHD_TIMESYNC */
 
 #ifdef DHD_FLOW_RING_STATUS_TRACE
 void dhd_dump_bus_flow_ring_status_isr_trace(dhd_bus_t *bus, struct bcmstrbuf *strbuf);
@@ -1167,7 +1166,7 @@ extern bool dhd_protocol_matches_profile(uint8 *p, int plen, const
 		dhd_tx_profile_protocol_t *proto, bool is_host_sfhllc);
 #endif /* defined(DHD_TX_PROFILE) */
 
-static void dhd_update_rxstats(dhd_pub_t *dhd, host_rxbuf_cmpl_t *rxstatus);
+static void dhd_update_rxstats(dhd_pub_t *dhd, host_rxbuf_cmpl_t *rxstatus, void *pkt);
 #ifdef DHD_HP2P
 static void dhd_update_hp2p_rxstats(dhd_pub_t *dhd, host_rxbuf_cmpl_t *rxstatus);
 static void dhd_update_hp2p_txstats(dhd_pub_t *dhd, host_txbuf_cmpl_t *txstatus);
@@ -1413,6 +1412,7 @@ dhd_prot_get_rxbufpost_alloc_sz(dhd_pub_t *dhd)
 {
 	return dhd->prot->rxbufpost_alloc_sz;
 }
+
 uint16
 dhd_prot_get_h2d_rx_post_active(dhd_pub_t *dhd)
 {
@@ -2941,6 +2941,7 @@ dhd_pktid_audit_ring_debug(dhd_pub_t *dhdp, dhd_pktid_map_t *map, uint32 pktid,
 	}
 	return ret;
 }
+
 #define DHD_PKTID_AUDIT_RING_DEBUG(dhdp, map, pktid, test_for, msg, msg_len) \
 	dhd_pktid_audit_ring_debug((dhdp), (dhd_pktid_map_t *)(map), \
 		(pktid), (test_for), msg, msg_len, __FUNCTION__)
@@ -3211,6 +3212,7 @@ dhd_pktid_map_fini(dhd_pub_t *dhd, dhd_pktid_map_handle_t *handle)
 	VMFREE(dhd->osh, map->keys, map_keys_sz);
 	VMFREE(dhd->osh, handle, dhd_pktid_map_sz);
 }
+
 #ifdef IOCTLRESP_USE_CONSTMEM
 static void
 dhd_pktid_map_fini_ioctl(dhd_pub_t *dhd, dhd_pktid_map_handle_t *handle)
@@ -4816,7 +4818,7 @@ dhd_prot_init(dhd_pub_t *dhd)
 #ifdef BCMQT
 #define	IDMA_ENABLE_WAIT  100
 #else
-#define	IDMA_ENABLE_WAIT  10
+#define	IDMA_ENABLE_WAIT  30
 #endif
 	if (IDMA_ACTIVE(dhd) || IFRM_ACTIVE(dhd)) {
 		/* wait for idma_en bit in IDMAcontrol register to be set */
@@ -5281,12 +5283,14 @@ dhd_lb_dispatch_rx_process(dhd_pub_t *dhdp)
 {
 	dhd_lb_rx_napi_dispatch(dhdp); /* dispatch rx_process_napi */
 }
+
 #else
 static INLINE void *
 dhd_rx_emerge_dequeue(dhd_pub_t *dhdp)
 {
 	return NULL;
 }
+
 static INLINE uint
 dhd_rx_emerge_queue_len(dhd_pub_t *dhdp)
 {
@@ -6092,7 +6096,7 @@ int dhd_sync_with_dongle(dhd_pub_t *dhd)
 		dhd->wlc_ver_minor = ((wl_wlc_version_t*)buf)->wlc_ver_minor;
 	}
 
-	DHD_PRINT(("\nwlc_ver_major %d, wlc_ver_minor %d",
+	DHD_PRINT(("\nwlc_ver_major %d, wlc_ver_minor %d\n",
 		dhd->wlc_ver_major, dhd->wlc_ver_minor));
 
 	dhdpcie_quirks_after_prot_init(dhd);
@@ -6106,7 +6110,7 @@ int dhd_sync_with_dongle(dhd_pub_t *dhd)
 		DHD_ERROR(("%s: GET iovar cur_etheraddr FAILED\n", __FUNCTION__));
 		goto done;
 	}
-	memcpy(dhd->mac.octet, buf, ETHER_ADDR_LEN);
+	eacopy(&buf, &dhd->mac.octet);
 	if (dhd_msg_level & DHD_INFO_VAL) {
 		bcm_print_bytes("CUR_ETHERADDR ", (uchar *)buf, ETHER_ADDR_LEN);
 	}
@@ -6242,6 +6246,7 @@ BCMFASTPATH(dhd_prot_print_metadata)(dhd_pub_t *dhd, void *ptr, int len)
 	uint8 tlv_t;
 	uint8 tlv_l;
 	uint8 *tlv_v = (uint8 *)ptr;
+	int ret = 0;
 
 	if (len <= BCMPCIE_D2H_METADATA_HDRLEN)
 		return;
@@ -6263,13 +6268,18 @@ BCMFASTPATH(dhd_prot_print_metadata)(dhd_pub_t *dhd, void *ptr, int len)
 		switch (tlv_t) {
 		case WLFC_CTL_TYPE_TXSTATUS: {
 			uint32 txs;
-			memcpy(&txs, tlv_v, sizeof(uint32));
+			(void)memcpy_s(&txs, sizeof(txs), tlv_v, sizeof(uint32));
 			if (tlv_l < (sizeof(wl_txstatus_additional_info_t) + sizeof(uint32))) {
 				DHD_CONS_ONLY(("METADATA TX_STATUS: %08x\n", txs));
 			} else {
 				wl_txstatus_additional_info_t tx_add_info;
-				memcpy(&tx_add_info, tlv_v + sizeof(uint32),
-					sizeof(wl_txstatus_additional_info_t));
+				ret = memcpy_s(&tx_add_info, sizeof(wl_txstatus_additional_info_t),
+					tlv_v + sizeof(uint32), tlv_l);
+				if (ret) {
+					DHD_ERROR(("tx status memcpy failed:%d, destsz:%lu, n:%d\n",
+						ret, sizeof(wl_txstatus_additional_info_t), tlv_l));
+					break;
+				}
 				DHD_CONS_ONLY(("METADATA TX_STATUS: %08x"
 					" WLFCTS[%04x | %08x - %08x - %08x]"
 					" rate = %08x tries = %d - %d\n", txs,
@@ -6303,10 +6313,16 @@ BCMFASTPATH(dhd_prot_print_metadata)(dhd_pub_t *dhd, void *ptr, int len)
 				uint32 bus_time;
 				uint32 wlan_time;
 			} rx_tmstamp;
-			memcpy(&rx_tmstamp, tlv_v, sizeof(rx_tmstamp));
+			ret = memcpy_s(&rx_tmstamp, sizeof(rx_tmstamp), tlv_v, tlv_l);
+			if (ret) {
+				DHD_ERROR(("rx tmstamp memcpy failed:%d, destsz:%lu, n:%d\n",
+					ret, sizeof(rx_tmstamp), tlv_l));
+				break;
+			}
 			DHD_CONS_ONLY(("METADATA RX TIMESTMAP: WLFCTS[%08x - %08x] rate = %08x\n",
 				rx_tmstamp.wlan_time, rx_tmstamp.bus_time, rx_tmstamp.rspec));
-			} break;
+			}
+			break;
 
 		case WLFC_CTL_TYPE_TRANS_ID:
 			bcm_print_bytes("METADATA TRANS_ID", tlv_v, tlv_l);
@@ -8297,7 +8313,7 @@ BCMFASTPATH(dhd_prot_process_msgbuf_rxcpl)(dhd_pub_t *dhd, int ringtype, uint32 
 
 				if (dhd->rx_cpl_lat_capable) {
 					DHD_GENERAL_LOCK(dhd, rx_lock_flags);
-					dhd_update_rxstats(dhd, msg);
+					dhd_update_rxstats(dhd, msg, pkt);
 					DHD_GENERAL_UNLOCK(dhd, rx_lock_flags);
 				}
 #ifdef DHD_HP2P
@@ -8516,8 +8532,9 @@ BCMFASTPATH(dhd_prot_process_msgbuf_txcpl)(dhd_pub_t *dhd, int ringtype, uint32 
 int
 BCMFASTPATH(dhd_prot_process_trapbuf)(dhd_pub_t *dhd)
 {
-	uint32 data;
+	uint32 data, copylen;
 	dhd_dma_buf_t *trap_addr = &dhd->prot->fw_trap_buf;
+	int ret = 0;
 
 	/* Interrupts can come in before this struct
 	 *  has been initialized.
@@ -8543,8 +8560,16 @@ BCMFASTPATH(dhd_prot_process_trapbuf)(dhd_pub_t *dhd)
 			if (dhd->extended_trap_data) {
 				OSL_CACHE_INV((void *)trap_addr->va,
 				       BCMPCIE_EXT_TRAP_DATA_MAXLEN);
-				memcpy(dhd->extended_trap_data, (uint32 *)trap_addr->va,
-				       BCMPCIE_EXT_TRAP_DATA_MAXLEN);
+				copylen = MIN(trap_addr->len, BCMPCIE_EXT_TRAP_DATA_MAXLEN);
+				ret = memcpy_s(dhd->extended_trap_data,
+					BCMPCIE_EXT_TRAP_DATA_MAXLEN,
+					(uint32 *)trap_addr->va, copylen);
+				if (ret) {
+					DHD_ERROR(("trap data memcpy failed:%d, destsz:%d, n:%u\n",
+						ret, BCMPCIE_EXT_TRAP_DATA_MAXLEN,
+						copylen));
+					return 0;
+				}
 			}
 			if (dhd->db7_trap.fw_db7w_trap_inprogress == FALSE) {
 				DHD_PRINT(("Extended trap data available\n"));
@@ -8975,6 +9000,7 @@ dhd_prot_ioctcmplt_process(dhd_pub_t *dhd, void *msg)
 #ifdef REPORT_FATAL_TIMEOUTS
 	uint16	dhd_xt_id;
 #endif
+	int ret = 0;
 
 	/* Check for ioctl timeout induce flag, which is set by firing
 	 * dhd iovar to induce IOCTL timeout. If flag is set,
@@ -9070,11 +9096,18 @@ dhd_prot_ioctcmplt_process(dhd_pub_t *dhd, void *msg)
 		pkt_id, xt_id, prot->ioctl_status, prot->ioctl_resplen));
 
 	if (prot->ioctl_resplen > 0) {
+		uint16 copy_len = MIN(prot->ioctl_resplen, prot->retbuf.len);
 #ifndef IOCTLRESP_USE_CONSTMEM
-		bcopy(PKTDATA(dhd->osh, pkt), prot->retbuf.va, prot->ioctl_resplen);
+		ret = memcpy_s(prot->retbuf.va, prot->retbuf.len, PKTDATA(dhd->osh, pkt), copy_len);
 #else
-		bcopy(pkt, prot->retbuf.va, prot->ioctl_resplen);
+		ret = memcpy_s(prot->retbuf.va, prot->retbuf.len, pkt, copy_len);
 #endif /* !IOCTLRESP_USE_CONSTMEM */
+		if (ret) {
+			DHD_ERROR(("memcpy failed:%d, destsz:%d, n:%u\n",
+				ret, prot->retbuf.len, copy_len));
+			dhd_wakeup_ioctl_event(dhd, IOCTL_RETURN_ON_ERROR);
+			goto exit;
+		}
 	}
 
 	/* Do not log WLC_GET_MAGIC and WLC_GET_VERSION */
@@ -9492,6 +9525,16 @@ BCMFASTPATH(dhd_prot_txstatus_process)(dhd_pub_t *dhd, void *msg)
 	bzero(&txcpl_info->tx_history[txcpl_info->txcpl_hist_count],
 		sizeof(tx_cpl_history_t));
 	if (DHD_PTM_CLKID(ts->high)) {
+#ifdef DHD_TIMESYNC
+		dhd_pkt_parse_t parse;
+
+		bzero(&parse, sizeof(dhd_pkt_parse_t));
+		dhd_parse_proto(PKTDATA(dhd->osh, pkt), &parse);
+
+		txcpl_info->tx_history[txcpl_info->txcpl_hist_count].proto = parse.proto;
+		txcpl_info->tx_history[txcpl_info->txcpl_hist_count].tuple_1 = parse.t1;
+		txcpl_info->tx_history[txcpl_info->txcpl_hist_count].tuple_2 = parse.t2;
+#endif /* DHD_TIMESYNC */
 		txcpl_info->tx_history[txcpl_info->txcpl_hist_count].ptm_high = ts->high;
 		txcpl_info->tx_history[txcpl_info->txcpl_hist_count].ptm_low = ts->low;
 	}
@@ -9992,7 +10035,7 @@ BCMFASTPATH(dhd_prot_txdata)(dhd_pub_t *dhd, void *PKTBUF, uint8 ifidx)
 	pktlen  = PKTLEN(dhd->osh, PKTBUF);
 
 	/* TODO: re-look into dropped packets */
-	DHD_DBG_PKT_MON_TX(dhd, PKTBUF, pktid, FRAME_TYPE_ETHERNET_II, 0);
+	DHD_DBG_PKT_MON_TX(dhd, PKTBUF, pktid, FRAME_TYPE_ETHERNET_II, 0, FALSE);
 
 	dhd_handle_pktdata(dhd, ifidx, PKTBUF, pktdata, pktid,
 			pktlen, NULL, &dhd_udr,
@@ -10086,8 +10129,16 @@ BCMFASTPATH(dhd_prot_txdata)(dhd_pub_t *dhd, void *PKTBUF, uint8 ifidx)
 			dhd->prot->hmaptest_tx_active = HMAPTEST_D11_TX_INACTIVE;
 			dhd->prot->hmaptest.in_progress = FALSE;
 		} else {
+			int ret = 0;
 			/* copy pktdata to our va */
-			memcpy(dhd->prot->hmap_tx_buf_va, PKTDATA(dhd->osh, PKTBUF), pktlen);
+			ret = memcpy_s(dhd->prot->hmap_tx_buf_va, dhd->prot->hmap_tx_buf_len,
+				PKTDATA(dhd->osh, PKTBUF), pktlen);
+			if (ret) {
+				DHD_ERROR(("memcpy hmap_tx_buf_va failed:%d, destsz:%d, n:%d\n",
+					ret, dhd->prot->hmap_tx_buf_len, pktlen));
+				ASSERT(0);
+				goto err_rollback_idx;
+			}
 			pa = DMA_MAP(dhd->osh, dhd->prot->hmap_tx_buf_va,
 				dhd->prot->hmap_tx_buf_len, DMA_TX, PKTBUF, 0);
 
@@ -10497,6 +10548,7 @@ dhd_msgbuf_hmaptest_cmplt(dhd_pub_t *dhd)
 	}
 
 }
+
 /* program HMAPTEST window and window config registers
  * Reference for HMAP implementation in OS's that can easily leverage it
  * this function can be used as reference for programming HMAP windows
@@ -10945,7 +10997,7 @@ int dhd_prot_ioctl(dhd_pub_t *dhd, int ifidx, wl_ioctl_t * ioc, void * buf, int 
 	DHD_TRACE(("%s: Enter\n", __FUNCTION__));
 
 #ifdef DHD_PCIE_REG_ACCESS
-#ifdef BOARD_HIKEY
+#if defined(BOARD_HIKEY) || defined (BOARD_STB)
 #ifndef PCIE_LNK_SPEED_GEN1
 #define PCIE_LNK_SPEED_GEN1		0x1
 #endif
@@ -10956,7 +11008,7 @@ int dhd_prot_ioctl(dhd_pub_t *dhd, int ifidx, wl_ioctl_t * ioc, void * buf, int 
 			BUG_ON(1);
 		}
 	}
-#endif /* BOARD_HIKEY */
+#endif /* BOARD_HIKEY || BOARD_STB */
 #endif /* DHD_PCIE_REG_ACCESS */
 
 	if (ioc->cmd == WLC_SET_PM) {
@@ -11966,6 +12018,7 @@ int dhd_edl_ring_hdr_write(dhd_pub_t *dhd, msgbuf_ring_t *ring, void *file, cons
 	char *buf = NULL, *ptr = NULL;
 	uint8 *msg_addr = NULL;
 	uint16	rd = 0;
+	uint size = 0;
 
 	if (ring == NULL) {
 		DHD_ERROR(("%s: Ring not initialised, failed to dump ring contents\n",
@@ -11974,7 +12027,8 @@ int dhd_edl_ring_hdr_write(dhd_pub_t *dhd, msgbuf_ring_t *ring, void *file, cons
 		goto done;
 	}
 
-	buf = MALLOCZ(dhd->osh, (D2HRING_EDL_MAX_ITEM * D2HRING_EDL_HDR_SIZE));
+	size = (D2HRING_EDL_MAX_ITEM * D2HRING_EDL_HDR_SIZE);
+	buf = MALLOCZ(dhd->osh, size);
 	if (buf == NULL) {
 		DHD_ERROR(("%s: buffer allocation failed\n", __FUNCTION__));
 		ret = BCME_ERROR;
@@ -11984,8 +12038,13 @@ int dhd_edl_ring_hdr_write(dhd_pub_t *dhd, msgbuf_ring_t *ring, void *file, cons
 
 	for (; nitems < D2HRING_EDL_MAX_ITEM; nitems++, rd++) {
 		msg_addr = (uint8 *)ring->dma_buf.va + (rd * ring->item_len);
-		memcpy(ptr, (char *)msg_addr, D2HRING_EDL_HDR_SIZE);
+		ret = memcpy_s(ptr, size, (char *)msg_addr, D2HRING_EDL_HDR_SIZE);
+		if (ret) {
+			DHD_ERROR(("D2HRING_EDL_HDR(%d) memcpy failed:%d, destsz:%d, n:%d\n",
+				rd, ret, D2HRING_EDL_HDR_SIZE, ring->item_len));
+		}
 		ptr += D2HRING_EDL_HDR_SIZE;
+		size -= D2HRING_EDL_HDR_SIZE;
 	}
 	if (file) {
 		ret = dhd_os_write_file_posn(file, file_posn, buf,
@@ -12141,6 +12200,66 @@ void dhd_prot_counters(dhd_pub_t *dhd, struct bcmstrbuf *b,
 	bcm_bprintf(b, "\n");
 }
 
+/*
+ * update driver_state_t, which has importent driver information like
+ * bus states, msgrings info, counters ...etc
+ */
+void
+dhd_prot_get_driver_state(dhd_pub_t *dhd, driver_state_t *driver_state)
+{
+	struct dhd_bus *bus;
+	struct dhd_prot *prot;
+	msgbuf_ring_t *ring;
+	log_msgbuf_ring_t *log_ring;
+
+	/* bzero for user not to get stale */
+	bzero(driver_state, sizeof(driver_state_t));
+
+	driver_state->length = sizeof(driver_state_t);
+
+	/* If msgbuf/PCIe IPC rings are not inited, or in the process of reinit, return */
+	if (dhd->ring_attached == FALSE)
+	{
+		return;
+	}
+
+	bus = dhd->bus;
+	prot = dhd->prot;
+	/* if bus or prot are not inited return */
+	if ((bus == NULL) || (prot == NULL)) {
+		return;
+	}
+	driver_state->max_eventbufpost = prot->max_eventbufpost;
+	driver_state->cur_event_bufs_posted = prot->cur_event_bufs_posted;
+	driver_state->max_ioctlrespbufpost = prot->max_ioctlrespbufpost;
+	driver_state->cur_ioctlresp_bufs_posted = prot->cur_ioctlresp_bufs_posted;
+	/* ctrl post indices both local and DMA */
+	ring =  &prot->h2dring_ctrl_subn;
+	log_ring = &driver_state->log_h2dring_ctrl_subn;
+	log_ring->hlrd = ring->rd;
+	log_ring->hlwr = ring->wr;
+	if (dhd->dma_d2h_ring_upd_support) {
+		log_ring->hdrd = dhd_prot_dma_indx_get(dhd, H2D_DMA_INDX_RD_UPD, ring->idx);
+		log_ring->hdwr = dhd_prot_dma_indx_get(dhd, H2D_DMA_INDX_WR_UPD, ring->idx);
+	}
+	/* ctrl cmpl indices both local and DMA */
+	ring =  &prot->d2hring_ctrl_cpln;
+	log_ring = &driver_state->log_d2hring_ctrl_cpln;
+	log_ring->hlrd = ring->rd;
+	log_ring->hlwr = ring->wr;
+	if (dhd->dma_d2h_ring_upd_support) {
+		log_ring->hdrd = dhd_prot_dma_indx_get(dhd, D2H_DMA_INDX_RD_UPD, ring->idx);
+		log_ring->hdwr = dhd_prot_dma_indx_get(dhd, D2H_DMA_INDX_WR_UPD, ring->idx);
+	}
+	/* d3 d0 counters */
+	driver_state->d3_inform_cnt = bus->d3_inform_cnt;
+	driver_state->d0_inform_cnt = bus->d0_inform_cnt;
+	driver_state->hostready_count = bus->hostready_count;
+	/* interrupt counters */
+	driver_state->host_irq_enable_count =  bus->host_irq_enable_count;
+	driver_state->host_irq_disable_count = bus->host_irq_disable_count;
+}
+
 /* Update local copy of dongle statistics */
 void dhd_prot_dstats(dhd_pub_t *dhd)
 {
@@ -12283,6 +12402,7 @@ dhd_fillup_ioct_reqst(dhd_pub_t *dhd, uint16 len, uint cmd, void* buf, int ifidx
 	dhd_prot_t *prot = dhd->prot;
 	ioctl_req_msg_t *ioct_rqst;
 	void * ioct_buf;	/* For ioctl payload */
+	uint32	ioct_buf_len;
 	uint16  rqstlen, resplen;
 	unsigned long flags;
 	uint16 alloced = 0;
@@ -12373,11 +12493,19 @@ dhd_fillup_ioct_reqst(dhd_pub_t *dhd, uint16 len, uint cmd, void* buf, int ifidx
 	ioct_rqst->host_input_buf_addr.low = htol32(PHYSADDRLO(prot->ioctbuf.pa));
 	/* copy ioct payload */
 	ioct_buf = (void *) prot->ioctbuf.va;
+	ioct_buf_len = prot->ioctbuf.len;
 
 	prot->ioctl_fillup_time = OSL_LOCALTIME_NS();
 
-	if (buf)
-		memcpy(ioct_buf, buf, len);
+	if (buf) {
+		int ret = 0;
+		ret = memcpy_s(ioct_buf, ioct_buf_len, buf, len);
+		if (ret) {
+			DHD_ERROR(("ioct_buf memcopy failed:%d, destsz:%d, n:%d\n",
+				ret, ioct_buf_len, len));
+			return BCME_ERROR;
+		}
+	}
 
 	OSL_CACHE_FLUSH((void *) prot->ioctbuf.va, len);
 
@@ -12422,6 +12550,7 @@ dhd_prot_txflowring_rw_trace_attach(dhd_pub_t *dhd, msgbuf_ring_t *ring)
 		}
 	}
 }
+
 static void
 dhd_prot_txflowring_rw_trace_detach(dhd_pub_t *dhd, msgbuf_ring_t *ring)
 {
@@ -14078,12 +14207,14 @@ dhd_prot_flow_ring_create(dhd_pub_t *dhd, flow_ring_node_t *flow_ring_node)
 	msgbuf_ring_t *ctrl_ring = &prot->h2dring_ctrl_subn;
 	uint16 max_flowrings = dhd->bus->max_tx_flowrings;
 	uint16 h2d_txpost_size;
+	int ret = 0;
 #if defined(DHD_MESH)
 	if_flow_lkup_t *if_flow_lkup = NULL;
 	uint8 ifindex;
 	uint8 role;
 	bool mesh_over_nan = FALSE;
 #endif /* defined(DHD_MESH) */
+	driver_state_t driver_state;
 
 	h2d_txpost_size = dhd_prot_get_h2d_txpost_size(dhd);
 	if (h2d_txpost_size == 0) {
@@ -14137,8 +14268,20 @@ dhd_prot_flow_ring_create(dhd_pub_t *dhd, flow_ring_node_t *flow_ring_node)
 	/* Update flow create message */
 	flow_create_rqst->tid = flow_ring_node->flow_info.tid;
 	flow_create_rqst->flow_ring_id = htol16((uint16)flow_ring_node->flowid);
-	memcpy(flow_create_rqst->sa, flow_ring_node->flow_info.sa, sizeof(flow_create_rqst->sa));
-	memcpy(flow_create_rqst->da, flow_ring_node->flow_info.da, sizeof(flow_create_rqst->da));
+	ret = memcpy_s(flow_create_rqst->sa, sizeof(flow_create_rqst->sa),
+		flow_ring_node->flow_info.sa, sizeof(flow_ring_node->flow_info.sa));
+	if (ret) {
+		DHD_ERROR(("flow message sa memcpy failed:%d, destsz:%lu, n:%lu\n",
+			ret, sizeof(flow_create_rqst->sa), sizeof(flow_ring_node->flow_info.sa)));
+		return BCME_ERROR;
+	}
+	ret = memcpy_s(flow_create_rqst->da, sizeof(flow_create_rqst->da),
+		flow_ring_node->flow_info.da, sizeof(flow_ring_node->flow_info.da));
+	if (ret) {
+		DHD_ERROR(("flow message da memcpy failed:%d, destsz:%lu, n:%lu\n",
+			ret, sizeof(flow_create_rqst->da), sizeof(flow_ring_node->flow_info.da)));
+		return BCME_ERROR;
+	}
 	/* CAUTION: ring::base_addr already in Little Endian */
 	flow_create_rqst->flow_ring_ptr.low_addr = flow_ring->base_addr.low_addr;
 	flow_create_rqst->flow_ring_ptr.high_addr = flow_ring->base_addr.high_addr;
@@ -14218,6 +14361,8 @@ dhd_prot_flow_ring_create(dhd_pub_t *dhd, flow_ring_node_t *flow_ring_node)
 
 	/* update control subn ring's WR index and ring doorbell to dongle */
 	dhd_prot_ring_write_complete(dhd, ctrl_ring, flow_create_rqst, 1);
+	DHD_LOG_MSGTYPE(dhd, dhd->logger, &driver_state, MSG_TYPE_FLOW_RING_CREATE,
+		flow_create_rqst, sizeof(tx_flowring_create_request_t));
 
 	DHD_RING_UNLOCK(ctrl_ring->ring_lock, flags);
 
@@ -14232,7 +14377,10 @@ static void
 dhd_prot_flow_ring_create_response_process(dhd_pub_t *dhd, void *msg)
 {
 	tx_flowring_create_response_t *flow_create_resp = (tx_flowring_create_response_t *)msg;
+	driver_state_t driver_state;
 
+	DHD_LOG_MSGTYPE(dhd, dhd->logger, &driver_state, MSG_TYPE_FLOW_RING_CREATE_CMPLT,
+		flow_create_resp, sizeof(tx_flowring_create_response_t));
 	DHD_PRINT(("%s: Flow Create Response status = %d Flow %d\n", __FUNCTION__,
 		ltoh16(flow_create_resp->cmplt.status),
 		ltoh16(flow_create_resp->cmplt.flow_ring_id)));
@@ -14571,6 +14719,7 @@ dhd_prot_flow_ring_delete(dhd_pub_t *dhd, flow_ring_node_t *flow_ring_node)
 	unsigned long flags;
 	uint16 alloced = 0;
 	msgbuf_ring_t *ring = &prot->h2dring_ctrl_subn;
+	driver_state_t driver_state;
 
 #ifdef PCIE_INB_DW
 	if (dhd_prot_inc_hostactive_devwake_assert(dhd->bus, __FUNCTION__) != BCME_OK)
@@ -14612,6 +14761,8 @@ dhd_prot_flow_ring_delete(dhd_pub_t *dhd, flow_ring_node_t *flow_ring_node)
 
 	/* update ring's WR index and ring doorbell to dongle */
 	dhd_prot_ring_write_complete(dhd, ring, flow_delete_rqst, 1);
+	DHD_LOG_MSGTYPE(dhd, dhd->logger, &driver_state, MSG_TYPE_FLOW_RING_DELETE,
+		flow_delete_rqst, sizeof(tx_flowring_delete_request_t));
 
 	DHD_RING_UNLOCK(ring->ring_lock, flags);
 
@@ -14654,6 +14805,10 @@ static void
 dhd_prot_flow_ring_delete_response_process(dhd_pub_t *dhd, void *msg)
 {
 	tx_flowring_delete_response_t *flow_delete_resp = (tx_flowring_delete_response_t *)msg;
+	driver_state_t driver_state;
+
+	DHD_LOG_MSGTYPE(dhd, dhd->logger, &driver_state, MSG_TYPE_FLOW_RING_DELETE_CMPLT,
+		flow_delete_resp, sizeof(tx_flowring_delete_response_t));
 
 	DHD_PRINT(("%s: Flow Delete Response status = %d Flow %d\n", __FUNCTION__,
 		flow_delete_resp->cmplt.status, flow_delete_resp->cmplt.flow_ring_id));
@@ -14672,6 +14827,10 @@ dhd_prot_process_flow_ring_resume_response(dhd_pub_t *dhd, void* msg)
 #ifdef IDLE_TX_FLOW_MGMT
 	tx_idle_flowring_resume_response_t	*flow_resume_resp =
 		(tx_idle_flowring_resume_response_t *)msg;
+	driver_state_t driver_state;
+
+	DHD_LOG_MSGTYPE(dhd, dhd->logger, &driver_state, MSG_TYPE_FLOW_RING_RESUME_CMPLT,
+		flow_resume_resp, sizeof(tx_idle_flowring_resume_response_t));
 
 	DHD_PRINT(("%s Flow resume Response status = %d Flow %d\n", __FUNCTION__,
 		flow_resume_resp->cmplt.status, flow_resume_resp->cmplt.flow_ring_id));
@@ -14688,6 +14847,11 @@ dhd_prot_process_flow_ring_suspend_response(dhd_pub_t *dhd, void* msg)
 	int16 status;
 	tx_idle_flowring_suspend_response_t	*flow_suspend_resp =
 		(tx_idle_flowring_suspend_response_t *)msg;
+	driver_state_t driver_state;
+
+	DHD_LOG_MSGTYPE(dhd, dhd->logger, &driver_state, MSG_TYPE_FLOW_RING_SUSPEND_CMPLT,
+		flow_suspend_resp, sizeof(tx_idle_flowring_suspend_response_t));
+
 	status = flow_suspend_resp->cmplt.status;
 
 	DHD_PRINT(("%s Flow id %d suspend Response status = %d\n",
@@ -14711,6 +14875,7 @@ dhd_prot_flow_ring_flush(dhd_pub_t *dhd, flow_ring_node_t *flow_ring_node)
 	unsigned long flags;
 	uint16 alloced = 0;
 	msgbuf_ring_t *ring = &prot->h2dring_ctrl_subn;
+	driver_state_t driver_state;
 
 #ifdef PCIE_INB_DW
 	if (dhd_prot_inc_hostactive_devwake_assert(dhd->bus, __FUNCTION__) != BCME_OK)
@@ -14746,6 +14911,8 @@ dhd_prot_flow_ring_flush(dhd_pub_t *dhd, flow_ring_node_t *flow_ring_node)
 
 	/* update ring's WR index and ring doorbell to dongle */
 	dhd_prot_ring_write_complete(dhd, ring, flow_flush_rqst, 1);
+	DHD_LOG_MSGTYPE(dhd, dhd->logger, &driver_state, MSG_TYPE_FLOW_RING_FLUSH,
+		flow_flush_rqst, sizeof(tx_flowring_flush_request_t));
 
 	DHD_RING_UNLOCK(ring->ring_lock, flags);
 
@@ -14759,6 +14926,10 @@ static void
 dhd_prot_flow_ring_flush_response_process(dhd_pub_t *dhd, void *msg)
 {
 	tx_flowring_flush_response_t *flow_flush_resp = (tx_flowring_flush_response_t *)msg;
+	driver_state_t driver_state;
+
+	DHD_LOG_MSGTYPE(dhd, dhd->logger, &driver_state, MSG_TYPE_FLOW_RING_FLUSH_CMPLT,
+		flow_flush_resp, sizeof(tx_flowring_flush_response_t));
 
 	DHD_INFO(("%s: Flow Flush Response status = %d\n", __FUNCTION__,
 		flow_flush_resp->cmplt.status));
@@ -14899,6 +15070,7 @@ copy_ext_trap_sig(dhd_pub_t *dhd, trap_t *tr)
 	uint32 *ext_data = dhd->extended_trap_data;
 	hnd_ext_trap_hdr_t *hdr;
 	const bcm_tlv_t *tlv;
+	int ret = 0;
 
 	if (ext_data == NULL) {
 		return;
@@ -14911,9 +15083,15 @@ copy_ext_trap_sig(dhd_pub_t *dhd, trap_t *tr)
 
 	tlv = bcm_parse_tlvs(hdr->data, hdr->len, TAG_TRAP_SIGNATURE);
 	if (tlv) {
-		memcpy(tr, &tlv->data, sizeof(struct _trap_struct));
+		ret = memcpy_s(tr, sizeof(struct _trap_struct), &tlv->data, tlv->len);
+		if (ret) {
+			DHD_ERROR(("tlv memcpy failed:%d, destsz:%lu, n:%d\n",
+				ret, sizeof(struct _trap_struct), tlv->len));
+			return;
+		}
 	}
 }
+
 #define TRAP_T_NAME_OFFSET(var) {#var, OFFSETOF(trap_t, var)}
 
 typedef struct {
@@ -15052,6 +15230,7 @@ copy_hang_info_head(char *dest, trap_t *src, int len, int field_name,
 	}
 #endif /* DHD_EWPR_VER2 */
 }
+
 #ifndef DHD_EWPR_VER2
 static void
 copy_hang_info_trap_t(char *dest, trap_t *src, int len, int field_name,
@@ -15242,6 +15421,7 @@ get_hang_info_trap_subtype(dhd_pub_t *dhd, uint32 *subtype)
 		}
 	}
 }
+
 #ifdef DHD_EWPR_VER2
 static void
 copy_hang_info_etd_base64(dhd_pub_t *dhd, char *dest, int *bytes_written, int *cnt)
@@ -16010,6 +16190,7 @@ dhd_prot_flow_ring_resume(dhd_pub_t *dhd, flow_ring_node_t *flow_ring_node)
 	unsigned long flags;
 	uint16 alloced = 0;
 	msgbuf_ring_t *ctrl_ring = &prot->h2dring_ctrl_subn;
+	driver_state_t driver_state;
 
 	/* Fetch a pre-initialized msgbuf_ring from the flowring pool */
 	flow_ring = dhd_prot_flowrings_pool_fetch(dhd, flow_ring_node->flowid);
@@ -16070,6 +16251,8 @@ dhd_prot_flow_ring_resume(dhd_pub_t *dhd, flow_ring_node_t *flow_ring_node)
 
 	/* update control subn ring's WR index and ring doorbell to dongle */
 	dhd_prot_ring_write_complete(dhd, ctrl_ring, flow_resume_rqst, 1);
+	DHD_LOG_MSGTYPE(dhd, dhd->logger, &driver_state, MSG_TYPE_FLOW_RING_RESUME,
+		flow_resume_rqst, sizeof(tx_idle_flowring_resume_request_t));
 
 	DHD_RING_UNLOCK(ctrl_ring->ring_lock, flags);
 
@@ -16088,6 +16271,7 @@ dhd_prot_flow_ring_batch_suspend_request(dhd_pub_t *dhd, uint16 *ringid, uint16 
 	uint16 index;
 	uint16 alloced = 0;
 	msgbuf_ring_t *ring = &prot->h2dring_ctrl_subn;
+	driver_state_t driver_state;
 
 #ifdef PCIE_INB_DW
 	if (dhd_prot_inc_hostactive_devwake_assert(dhd->bus, __FUNCTION__) != BCME_OK)
@@ -16128,6 +16312,8 @@ dhd_prot_flow_ring_batch_suspend_request(dhd_pub_t *dhd, uint16 *ringid, uint16 
 
 	/* update ring's WR index and ring doorbell to dongle */
 	dhd_prot_ring_write_complete(dhd, ring, flow_suspend_rqst, 1);
+	DHD_LOG_MSGTYPE(dhd, dhd->logger, &driver_state, MSG_TYPE_FLOW_RING_SUSPEND,
+		flow_suspend_rqst, sizeof(tx_idle_flowring_suspend_request_t));
 
 	DHD_RING_UNLOCK(ring->ring_lock, flags);
 
@@ -16698,6 +16884,7 @@ dhd_prot_send_host_timestamp(dhd_pub_t *dhdp, uchar *tlvs, uint16 tlv_len,
 	uint16 alloced = 0;
 	uchar *ts_tlv_buf;
 	msgbuf_ring_t *ctrl_ring = &prot->h2dring_ctrl_subn;
+	int ret;
 
 	if ((tlvs == NULL) || (tlv_len == 0)) {
 		DHD_ERROR(("%s: argument error tlv: %p, tlv_len %d\n",
@@ -16752,7 +16939,12 @@ dhd_prot_send_host_timestamp(dhd_pub_t *dhdp, uchar *tlvs, uint16 tlv_len,
 	/* copy ioct payload */
 	ts_tlv_buf = (void *) prot->hostts_req_buf.va;
 	prot->hostts_req_buf_inuse = TRUE;
-	memcpy(ts_tlv_buf, tlvs, tlv_len);
+	ret = memcpy_s(ts_tlv_buf, prot->hostts_req_buf.len, tlvs, tlv_len);
+	if (ret) {
+		DHD_ERROR(("copy ioct payload failed:%d, destsz:%d, n:%d\n",
+			ret, prot->hostts_req_buf.len, tlv_len));
+		return BCME_ERROR;
+	}
 
 	OSL_CACHE_FLUSH((void *) prot->hostts_req_buf.va, tlv_len);
 
@@ -16988,6 +17180,7 @@ dhd_prot_get_snapshot(dhd_pub_t *dhdp, uint8 snapshot_type, uint32 offset,
 	uint8 *buf = prot->snapshot_upload_buf.va;
 	uint8 *buf_end = buf + prot->snapshot_upload_len;
 	uint32 copy_size;
+	int ret = 0;
 
 	/* snapshot type must match */
 	if (prot->snapshot_type != snapshot_type) {
@@ -17006,7 +17199,12 @@ dhd_prot_get_snapshot(dhd_pub_t *dhdp, uint8 snapshot_type, uint32 offset,
 
 	/* copy dst buf size or remaining size */
 	copy_size = MIN(dst_buf_size, buf_end - (buf + offset));
-	memcpy(dst_buf, buf + offset, copy_size);
+	ret = memcpy_s(dst_buf, dst_buf_size, buf + offset, copy_size);
+	if (ret) {
+		DHD_ERROR(("buf memcpy failed:%d, destsz:%d, n:%d\n",
+			ret, dst_buf_size, copy_size));
+		return BCME_ERROR;
+	}
 
 	/* return size and is_more */
 	*dst_size = copy_size;
@@ -17489,7 +17687,7 @@ dhd_prot_mdring_linked_ring(dhd_pub_t *dhd)
 */
 
 static void
-dhd_update_rxstats(dhd_pub_t *dhd, host_rxbuf_cmpl_t *rxstatus)
+dhd_update_rxstats(dhd_pub_t *dhd, host_rxbuf_cmpl_t *rxstatus, void *pkt)
 {
 	uint32 marker = rxstatus->marker;
 	uint16 flags = rxstatus->flags;
@@ -17525,6 +17723,17 @@ dhd_update_rxstats(dhd_pub_t *dhd, host_rxbuf_cmpl_t *rxstatus)
 
 	/* store PTM timestamps */
 	if (DHD_PTM_CLKID(ts->high)) {
+#ifdef DHD_TIMESYNC
+		dhd_pkt_parse_t parse;
+
+		bzero(&parse, sizeof(dhd_pkt_parse_t));
+		dhd_parse_proto(PKTDATA(dhd->osh, pkt), &parse);
+
+		rxcpl_info->rx_history[rxcpl_info->rxcpl_hist_count].proto = parse.proto;
+		rxcpl_info->rx_history[rxcpl_info->rxcpl_hist_count].tuple_1 = parse.t1;
+		rxcpl_info->rx_history[rxcpl_info->rxcpl_hist_count].tuple_2 = parse.t2;
+#endif /* DHD_TIMESYNC */
+
 		rxcpl_info->rx_history[rxcpl_info->rxcpl_hist_count].ptm_high = ts->high;
 		rxcpl_info->rx_history[rxcpl_info->rxcpl_hist_count].ptm_low = ts->low;
 		rxcpl_info->rx_history[rxcpl_info->rxcpl_hist_count].host_time =
@@ -17664,6 +17873,7 @@ dhd_dump_bus_flow_ring_status_dpc_trace(dhd_bus_t *bus, struct bcmstrbuf *strbuf
 	dhd_dump_bus_flow_ring_status_trace(bus, strbuf, bus->frs_dpc_trace,
 		dumpsz, "DPC FLOW RING TRACE DRD-DWR");
 }
+
 static void
 dhd_bus_flow_ring_status_trace(dhd_pub_t *dhd, dhd_frs_trace_t *frs_trace)
 {

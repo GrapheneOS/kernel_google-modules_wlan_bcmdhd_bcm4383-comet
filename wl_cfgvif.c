@@ -1,7 +1,7 @@
 /*
  * Wifi Virtual Interface implementaion
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -366,6 +366,33 @@ wl_cfg80211_check_vif_in_use(struct net_device *ndev)
 	return FALSE;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
+void
+wl_cfgvif_delayed_remove_iface_work(struct work_struct *work)
+{
+	struct bcm_cfg80211 *cfg = NULL;
+	struct net_device *ndev;
+
+	BCM_SET_CONTAINER_OF(cfg, work, struct bcm_cfg80211, remove_iface_work.work);
+
+	if (cfg->if_event_info.ifidx) {
+		ndev = bcmcfg_to_prmry_ndev(cfg);
+
+#ifdef BCMDONGLEHOST
+		dhd_net_if_lock(ndev);
+#endif /* BCMDONGLEHOST */
+		rtnl_lock();
+		/* Remove interface except for primary ifidx */
+		wl_cfg80211_remove_if(cfg, cfg->if_event_info.ifidx, ndev, FALSE);
+		rtnl_unlock();
+
+#ifdef BCMDONGLEHOST
+		dhd_net_if_unlock(ndev);
+#endif /* BCMDONGLEHOST */
+	}
+	return;
+}
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0) */
 
 #ifdef WL_IFACE_MGMT_CONF
 #ifdef WL_IFACE_MGMT
@@ -1071,6 +1098,40 @@ wl_mlo_update_linkaddr(wl_mlo_config_v1_t *mlo_config)
 			i, MAC2STRDBG(&mlo_config->link_config[i].link_addr)));
 	}
 }
+
+chanspec_t
+wl_mlo_get_primary_sta_chspec(struct bcm_cfg80211 *cfg)
+{
+	struct net_info *mld_netinfo = NULL;
+	chanspec_t sta_chspec = INVCHANSPEC;
+	u8 ml_count = 0;
+
+	if (!cfg->mlo.supported) {
+		return INVCHANSPEC;
+	}
+
+	mld_netinfo = wl_cfg80211_get_mld_netinfo_by_cfg(cfg, &ml_count);
+	if (mld_netinfo && (mld_netinfo->mlinfo.num_links > 1) && (ml_count == 1)) {
+		/* Get primary link info to update the chanspec */
+		wl_mlo_link_t *prim_link = wl_cfg80211_get_ml_link_by_linkidx(cfg,
+			mld_netinfo, 0);
+		if (prim_link != NULL) {
+			sta_chspec = prim_link->chspec;
+			if (sta_chspec != INVCHANSPEC) {
+				WL_DBG(("Using ML primary link sta chanspec 0x%x\n",
+					sta_chspec));
+			} else {
+				WL_ERR(("Invalid ML primary link sta chanspec\n"));
+				return INVCHANSPEC;
+			}
+		} else {
+			WL_ERR(("Invalid ML primary link\n"));
+			return INVCHANSPEC;
+		}
+	}
+
+	return sta_chspec;
+}
 #endif /* WL_MLO */
 
 bcm_struct_cfgdev *
@@ -1768,35 +1829,28 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 			}
 		}
 	}
-#ifdef NOT_YET
-	switch (channel_type) {
-		case NL80211_CHAN_HT40MINUS:
-			/* secondary channel is below the control channel */
-			chspec = CH40MHZ_CHSPEC(wf_chspec_center_channel(chspec),
-				WL_CHANSPEC_CTL_SB_UPPER);
-			break;
-		case NL80211_CHAN_HT40PLUS:
-			/* secondary channel is above the control channel */
-			chspec = CH40MHZ_CHSPEC(wf_chspec_center_channel(chspec),
-				WL_CHANSPEC_CTL_SB_LOWER);
-			break;
-		default:
-			chspec = CH20MHZ_CHSPEC(wf_chspec_center_channel(chspec));
-
-	}
-#endif /* NOT_YET */
 
 	if (wl_get_mode_by_netdev(cfg, dev) == WL_MODE_AP &&
 		DHD_OPMODE_STA_SOFTAP_CONCURR(dhd) &&
 		wl_get_drv_status(cfg, CONNECTED, bcmcfg_to_prmry_ndev(cfg))) {
-		chanspec_t *sta_chanspec = (chanspec_t *)wl_read_prof(cfg,
-			bcmcfg_to_prmry_ndev(cfg), WL_PROF_CHAN);
-		if (chan->band == wl_get_nl80211_band(CHSPEC_BAND(*sta_chanspec))) {
+		chanspec_t sta_chanspec;
+#ifdef WL_MLO
+		if (INVCHANSPEC != (sta_chanspec = wl_mlo_get_primary_sta_chspec(cfg))) {
+			WL_INFORM_MEM(("Using ML primary link sta chanspec 0x%x\n",
+				sta_chanspec));
+		} else
+#endif /* WL_MLO */
+		{
+			chanspec_t *psta_chanspec = (chanspec_t *)wl_read_prof(cfg,
+				bcmcfg_to_prmry_ndev(cfg), WL_PROF_CHAN);
+			sta_chanspec = *psta_chanspec;
+		}
+		if (chan->band == wl_get_nl80211_band(CHSPEC_BAND(sta_chanspec))) {
 			chspec = (
 #ifdef WL_6G_BAND
-				(CHSPEC_IS6G(*sta_chanspec) && (!CHSPEC_IS_6G_PSC(*sta_chanspec) ||
+				(CHSPEC_IS6G(sta_chanspec) && (!CHSPEC_IS_6G_PSC(sta_chanspec) ||
 #ifdef APSTA_RESTRICTED_CHANNEL
-				(wf_chspec_primary20_chspec(*sta_chanspec) !=
+				(wf_chspec_primary20_chspec(sta_chanspec) !=
 				wf_chspec_primary20_chspec(chspec)) ||
 #endif /* APSTA_RESTRICTED_CHANNEL */
 				FALSE)) ||
@@ -1818,17 +1872,17 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 				  *   5GHz APs except for CH149, 153, 157, 161.
 				  * - Otherwise, set the channel to the same channel as existing AP.
 				  */
-				((CHSPEC_IS5G(*sta_chanspec)) &&
-				(!IS_5G_APCS_CHANNEL(wf_chspec_primary20_chan(*sta_chanspec)))) ||
+				((CHSPEC_IS5G(sta_chanspec)) &&
+				(!IS_5G_APCS_CHANNEL(wf_chspec_primary20_chan(sta_chanspec)))) ||
 #else
-				(is_chanspec_dfs(cfg, *sta_chanspec) ||
+				(wl_is_chanspec_restricted(cfg, sta_chanspec) ||
 #ifdef WL_UNII4_CHAN
-				(CHSPEC_IS5G(*sta_chanspec) &&
-				IS_UNII4_CHANNEL(wf_chspec_primary20_chan(*sta_chanspec))) ||
+				(CHSPEC_IS5G(sta_chanspec) &&
+				IS_UNII4_CHANNEL(wf_chspec_primary20_chan(sta_chanspec))) ||
 #endif /* WL_UNII4_CHAN */
 				FALSE) ||
 #endif /* APSTA_RESTRICTED_CHANNEL */
-				FALSE)) ? DEFAULT_2G_SOFTAP_CHANSPEC : *sta_chanspec;
+				FALSE)) ? DEFAULT_2G_SOFTAP_CHANSPEC : sta_chanspec;
 			WL_ERR(("target chanspec will be changed to %x\n", chspec));
 			if (CHSPEC_IS2G(chspec)) {
 				bw = WL_CHANSPEC_BW_20;
@@ -1840,7 +1894,7 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 				/* 165/20 SCC is allowed only if STA connnection is 165/20.
 				 *  For other BW, downgrade Softap.
 				 */
-				if (!CHSPEC_IS20(*sta_chanspec)) {
+				if (!CHSPEC_IS20(sta_chanspec)) {
 					/* Downgrade to 2g def */
 					chspec = DEFAULT_2G_SOFTAP_CHANSPEC;
 					WL_INFORM_MEM(("target chspec updated: 0x%x\n", chspec));
@@ -3302,6 +3356,10 @@ wl_cfg80211_bcn_bringup_ap(
 	s32 err = BCME_OK;
 	s32 is_rsdb_supported = BCME_ERROR;
 	u8 buf[WLC_IOCTL_SMLEN] = {0};
+#ifdef WL_MLO
+	struct net_info *mld_netinfo = NULL;
+	u8 ml_count = 0;
+#endif /* WL_MLO */
 
 #if defined (BCMDONGLEHOST)
 	is_rsdb_supported = DHD_OPMODE_SUPPORTED(cfg->pub, DHD_FLAG_RSDB_MODE);
@@ -3489,6 +3547,18 @@ wl_cfg80211_bcn_bringup_ap(
 		if (cfg->mlo.ap.config_in_progress == FALSE)
 #endif /* WL_MLO && WL_MLO_AP */
 		{
+#ifdef WL_MLO
+			/* MLO setting for single link before start of SoftAP */
+			mld_netinfo = wl_cfg80211_get_mld_netinfo_by_cfg(cfg, &ml_count);
+			if (ml_count > 1) {
+				WL_ERR(("multi ML connections. AP/GO can't be supported\n"));
+				goto exit;
+			}
+
+			if (mld_netinfo && (mld_netinfo->mlinfo.num_links > 1)) {
+				wl_mlo_set_multilink(cfg, dev, FALSE);
+			}
+#endif
 			bzero(&join_params, sizeof(join_params));
 			/* join parameters starts with ssid */
 			join_params_size = sizeof(join_params.ssid);
@@ -3613,7 +3683,7 @@ wl_cfg80211_parse_ap_ies(
 	}
 
 	if ((err = wl_cfg80211_config_rsnxe_ie(cfg, dev,
-		(const u8 *)info->tail, info->tail_len)) < 0) {
+		(const u8 *)info->tail, info->tail_len, NULL)) < 0) {
 		WL_ERR(("Failed to configure rsnxe ie: %d\n", err));
 		err = -EINVAL;
 		goto fail;
@@ -4428,7 +4498,10 @@ wl_cfg80211_stop_ap(
 #endif /* DHD_PCIE_RUNTIMEPM */
 #endif /* CUSTOMER_HW4 */
 	u8 null_mac[ETH_ALEN];
-
+#ifdef WL_MLO
+	struct net_info *mld_netinfo = NULL;
+	u8 ml_count = 0;
+#endif /* WL_MLO */
 
 	WL_DBG(("Enter \n"));
 
@@ -4498,6 +4571,14 @@ wl_cfg80211_stop_ap(
 	if ((err = wl_cfg80211_bss_up(cfg, dev, bssidx, 0)) < 0) {
 		WL_ERR(("bss down error %d\n", err));
 	}
+
+#ifdef WL_MLO
+	/* MLO setting for max supported MLO links */
+	mld_netinfo = wl_cfg80211_get_mld_netinfo_by_cfg(cfg, &ml_count);
+	if (mld_netinfo && ml_count) {
+		wl_mlo_set_multilink(cfg, mld_netinfo->ndev, TRUE);
+	}
+#endif /* WL_MLO */
 
 #if defined(WL_MLO) && defined(WL_MLO_AP)
 	if (cfg->mlo.supported && mlo_ap_enable) {

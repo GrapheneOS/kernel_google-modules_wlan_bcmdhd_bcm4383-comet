@@ -1,7 +1,7 @@
 /*
  * Linux OS Independent Layer
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1521,6 +1521,22 @@ osl_sysuptime_us(void)
 }
 
 uint64
+osl_sysuptime_ns(void)
+{
+	struct timespec64 ts;
+	uint64 nsec;
+
+	ktime_get_real_ts64(&ts);
+	/* tv_nsec content is fraction of a second */
+	nsec = (uint64)ts.tv_sec * NSEC_PER_SEC + ts.tv_nsec;
+#if defined(BCMSLTGT)
+	/* scale down the time to match the slow target roughly */
+	nsec /= htclkratio;
+#endif /* BCMSLTGT */
+	return nsec;
+}
+
+uint64
 osl_localtime_ns(void)
 {
 	uint64 ts_nsec = 0;
@@ -1583,6 +1599,12 @@ osl_get_rtctime(void)
 			"%02d:%02d:%02d.%06lu",
 			tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec/NSEC_PER_USEC);
 	return timebuf;
+}
+
+uint64
+osl_getcycles(void)
+{
+	return get_cycles();
 }
 
 /*
@@ -1830,19 +1852,6 @@ void *
 osl_cached(void *va)
 {
 	return ((void*)va);
-}
-
-uint
-osl_getcycles(void)
-{
-	uint cycles;
-
-#if defined(__i386__)
-	rdtscl(cycles);
-#else
-	cycles = 0;
-#endif /* __i386__ */
-	return cycles;
 }
 
 void *
@@ -2275,7 +2284,7 @@ osl_reg_access_pcie_window_init(osl_t *osh, void *bp_access_lock, unsigned long 
  *                        address.
  */
 volatile void *
-osl_update_pcie_win(osl_t *osh, uint32 *reg_addr)
+osl_update_pcie_win(osl_t *osh, volatile void *reg_addr)
 {
 	unsigned long r_addr = (unsigned long)reg_addr;
 	unsigned long base_addr = (r_addr & BAR0_WINDOW_ADDRESS_MASK);

@@ -1,7 +1,7 @@
 /*
  * Linux DHD Bus Module for PCIE
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1704,8 +1704,14 @@ dhdpcie_bus_unregister(void)
 	/* Check if bus is in suspend due to wifi off with accel boot */
 	if (dhdp->up == FALSE && dhdp->busstate == DHD_BUS_SUSPEND) {
 		DHD_GENERAL_UNLOCK(dhdp, flags);
-		DHD_PRINT(("%s Bus is in suspend state\n", __FUNCTION__));
-		dhdpcie_pci_suspend_resume(dhdp->bus, FALSE);
+		DHD_PRINT(("%s Bus is in suspend state, dongle isolation %d\n",
+			__FUNCTION__, dhdp->dongle_isolation));
+#ifndef OEM_ANDROID
+		if (dhdp->dongle_isolation == FALSE)
+#endif /* OEM_ANDROID */
+		{
+			dhdpcie_pci_suspend_resume(dhdp->bus, FALSE);
+		}
 	} else {
 		DHD_GENERAL_UNLOCK(dhdp, flags);
 	}
@@ -2306,6 +2312,17 @@ int dhdpcie_init(struct pci_dev *pdev)
 			return -EINVAL;
 		}
 #endif /* DHD_SET_PCIE_DMA_MASK_FOR_GS101 */
+
+#ifdef BOARD_STB
+#define DHD_PCIE_DMA_MASK_FOR_STB 64
+		if (pci_set_dma_mask(pdev, DMA_BIT_MASK(DHD_PCIE_DMA_MASK_FOR_STB)) ||
+			pci_set_consistent_dma_mask(pdev,
+				DMA_BIT_MASK(DHD_PCIE_DMA_MASK_FOR_STB))) {
+			DHD_ERROR(("%s: DMA set %d bit mask failed.\n",
+				__FUNCTION__, DHD_PCIE_DMA_MASK_FOR_STB));
+			return -EINVAL;
+		}
+#endif /* BOARD_STB */
 
 #ifdef DHD_WAKE_STATUS
 		/* Initialize pkt_wake_lock */
@@ -2994,6 +3011,7 @@ int dhdpcie_get_oob_irq_level(void)
 #endif /* CONFIG_BCMDHD_GET_OOB_STATE */
 	return gpio_level;
 }
+
 #ifdef PRINT_WAKEUP_GPIO_STATUS
 int dhdpcie_get_oob_gpio_number(void)
 {
@@ -3004,6 +3022,7 @@ int dhdpcie_get_oob_gpio_number(void)
 	return gpio_number;
 }
 #endif /* PRINT_WAKEUP_GPIO_STATUS */
+
 int dhdpcie_get_oob_irq_status(struct dhd_bus *bus)
 {
 	dhdpcie_info_t *pch;
@@ -3210,11 +3229,11 @@ int dhdpcie_oob_intr_register(dhd_bus_t *bus)
 		 * ENXIO (No such device or address). This is because the callback function
 		 * irq_set_wake() is not registered in kernel, hence returning BCME_OK.
 		 */
-#ifdef BOARD_HIKEY
+#if defined(BOARD_HIKEY) || defined (BOARD_STB)
 		DHD_PRINT(("%s: continue eventhough enable_irq_wake failed: %d\n",
 				__FUNCTION__, err));
 		err = BCME_OK;
-#endif /* BOARD_HIKEY */
+#endif /* BOARD_HIKEY || BOARD_STB */
 		}
 		dhdpcie_osinfo->oob_irq_enabled = TRUE;
 	}
@@ -3452,7 +3471,7 @@ bool dhd_runtimepm_state(dhd_pub_t *dhd)
 			DHD_GENERAL_UNLOCK(dhd, flags);
 #ifdef WL_CFG80211
 			ps_mode_off_dur = dhd_ps_mode_managed_dur(dhd);
-			DHD_PRINT(("%s: DHD Idle state!! -  idletime :%d, wdtick :%d, "
+			DHD_RPM(("%s: DHD Idle state!! -  idletime :%d, wdtick :%d, "
 				"PS mode off dur: %d sec \n", __FUNCTION__,
 				bus->idletime, dhd_runtimepm_ms, ps_mode_off_dur));
 #else
@@ -3553,7 +3572,7 @@ bool dhd_runtimepm_state(dhd_pub_t *dhd)
 
 			smp_wmb();
 			wake_up(&bus->rpm_queue);
-			DHD_PRINT(("%s : runtime resume ended \n", __FUNCTION__));
+			DHD_RPM(("%s : runtime resume ended \n", __FUNCTION__));
 			return TRUE;
 		} else {
 			DHD_GENERAL_UNLOCK(dhd, flags);
@@ -3600,7 +3619,7 @@ bool dhd_runtime_bus_wake(dhd_bus_t *bus, bool wait, void *func_addr)
 
 			DHD_GENERAL_UNLOCK(bus->dhd, flags);
 
-			DHD_PRINT(("Runtime Resume is called in %ps\n", func_addr));
+			DHD_RPM(("Runtime Resume is called in %ps\n", func_addr));
 			smp_wmb();
 			wake_up(&bus->rpm_queue);
 		/* No need to wake up the RPM state thread */

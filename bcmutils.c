@@ -1,7 +1,7 @@
 /*
  * Driver O/S-independent utility routines
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1779,12 +1779,11 @@ BCMATTACHFN(bcm_mwbmap_init)(osl_t *osh, uint32 items_max)
 	/* Allocate runtime state of multiword bitmap */
 	/* Note: wd_count[] or wd_bitmap[] are not dynamically allocated */
 	size = sizeof(bcm_mwbmap_t) + (sizeof(uint32) * words);
-	mwbmap_p = (bcm_mwbmap_t *)MALLOC(osh, size);
+	mwbmap_p = (bcm_mwbmap_t *)MALLOCZ(osh, size);
 	if (mwbmap_p == (bcm_mwbmap_t *)NULL) {
 		ASSERT(0);
 		goto error1;
 	}
-	bzero(mwbmap_p, size);
 
 	/* Initialize runtime multiword bitmap state */
 	mwbmap_p->imaps = (uint16)words;
@@ -2188,7 +2187,7 @@ id16_map_init(osl_t *osh, uint16 total_ids, uint16 start_val16)
 	ASSERT((start_val16 == ID16_UNDEFINED) ||
 	       (start_val16 + total_ids) < ID16_INVALID);
 
-	id16_map = (id16_map_t *) MALLOC(osh, ID16_MAP_SZ(total_ids));
+	id16_map = (id16_map_t *) MALLOCZ(osh, ID16_MAP_SZ(total_ids));
 	if (id16_map == NULL) {
 		return NULL;
 	}
@@ -2215,7 +2214,7 @@ id16_map_init(osl_t *osh, uint16 total_ids, uint16 start_val16)
 
 #if defined(BCM_DBG) && defined(BCM_DBG_ID16)
 	if (id16_map->start != ID16_UNDEFINED) {
-		id16_map->dbg = MALLOC(osh, ID16_MAP_DBG_SZ(total_ids));
+		id16_map->dbg = MALLOCZ(osh, ID16_MAP_DBG_SZ(total_ids));
 
 		if (id16_map->dbg) {
 			id16_map_dbg_t *id16_map_dbg = (id16_map_dbg_t *)id16_map->dbg;
@@ -2717,45 +2716,6 @@ bcm_find_ie(const uint8* tlvs, uint tlvs_len, uint8 tag, uint8 oui_len,
 	return NULL;
 }
 
-/* Look for vendor-specific IE with specified OUI and optional type */
-bcm_tlv_t *
-bcm_find_vendor_ie(const  void *tlvs, uint tlvs_len, const char *voui, uint8 *type, uint type_len)
-{
-	const  bcm_tlv_t *ie;
-	uint8 ie_len;
-
-	COV_TAINTED_DATA_SINK(tlvs_len);
-	COV_NEG_SINK(tlvs_len);
-
-	ie = (const  bcm_tlv_t*)tlvs;
-
-	/* make sure we are looking at a valid IE */
-	if (ie == NULL || !bcm_valid_tlv(ie, tlvs_len)) {
-		return NULL;
-	}
-
-	/* Walk through the IEs looking for an OUI match */
-	do {
-		ie_len = ie->len;
-		if ((ie->id == DOT11_MNG_VS_ID) &&
-		    (ie_len >= (DOT11_OUI_LEN + type_len)) &&
-		    !bcmp(ie->data, voui, DOT11_OUI_LEN))
-		{
-			/* compare optional type */
-			if (type_len == 0 ||
-			    !bcmp(((const char *)ie->data) + DOT11_OUI_LEN, type, type_len)) {
-
-				COV_TAINTED_DATA_ARG(ie);
-
-				GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
-				return (bcm_tlv_t *)(ie);		/* a match */
-				GCC_DIAGNOSTIC_POP();
-			}
-		}
-	} while ((ie = bcm_next_tlv(ie, &tlvs_len)) != NULL);
-
-	return NULL;
-}
 
 #if defined(WLTINYDUMP) || defined(BCMDBG) || defined(WLMSG_INFORM) || \
 	defined(WLMSG_ASSOC) || defined(WLMSG_PRPKT) || defined(WLMSG_WSEC)
@@ -2789,6 +2749,46 @@ bcm_format_ssid(char* buf, const uchar ssid[], uint ssid_len)
 #endif /* WLTINYDUMP || BCMDBG || WLMSG_INFORM || WLMSG_ASSOC || WLMSG_PRPKT */
 
 #endif /* BCMDRIVER || WL_UNITTEST */
+
+/* Look for vendor-specific IE with specified OUI and optional type */
+bcm_tlv_t *
+bcm_find_vendor_ie(const  void *tlvs, uint tlvs_len, const char *voui, uint8 *type, uint type_len)
+{
+	const  bcm_tlv_t *ie;
+	uint8 ie_len;
+
+	COV_TAINTED_DATA_SINK(tlvs_len);
+	COV_NEG_SINK(tlvs_len);
+
+	ie = (const  bcm_tlv_t*)tlvs;
+
+	/* make sure we are looking at a valid IE */
+	if (ie == NULL || !bcm_valid_tlv(ie, tlvs_len)) {
+		return NULL;
+	}
+
+	/* Walk through the IEs looking for an OUI match */
+	do {
+		ie_len = ie->len;
+		if ((ie->id == DOT11_MNG_VS_ID) &&
+		    (ie_len >= (DOT11_OUI_LEN + type_len)) &&
+		    !memcmp(ie->data, voui, DOT11_OUI_LEN))
+		{
+			/* compare optional type */
+			if (type_len == 0 ||
+			    !memcmp(((const char *)ie->data) + DOT11_OUI_LEN, type, type_len)) {
+
+				COV_TAINTED_DATA_ARG(ie);
+
+				GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
+				return (bcm_tlv_t *)(ie);		/* a match */
+				GCC_DIAGNOSTIC_POP();
+			}
+		}
+	} while ((ie = bcm_next_tlv(ie, &tlvs_len)) != NULL);
+
+	return NULL;
+}
 
 /* Masking few bytes of MAC address per customer in all prints/eventlogs. */
 int
@@ -4184,7 +4184,7 @@ testcrc32(void)
 	uint32 crc32tv[CNBUFS] =
 		{0xd2cb1faa, 0xd385c8fa, 0xf5b4f3f3, 0x55789e20, 0x00343110};
 
-	ASSERT((buf = MALLOC(CBUFSIZ*CNBUFS)) != NULL);
+	ASSERT((buf = MALLOCZ(CBUFSIZ*CNBUFS)) != NULL);
 
 	/* step through all possible alignments */
 	for (l = 0; l <= 4; l++) {
@@ -6233,7 +6233,7 @@ BCMATTACHFN(initvars_table)(osl_t *osh, char *start, char *end, char **vars,
 
 	/* do it only when there is more than just the null string */
 	if (c > 1) {
-		char *vp = MALLOC(osh, c);
+		char *vp = MALLOCZ(osh, c);
 		ASSERT(vp != NULL);
 		if (!vp)
 			return BCME_NOMEM;

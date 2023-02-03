@@ -1,7 +1,7 @@
 /*
  * Common function shared by Linux WEXT, cfg80211 and p2p drivers
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -73,6 +73,9 @@
 		pr_cont(WLDEV_INFO_TEXT);	\
 		pr_cont args;							\
 	} while (0)
+
+#define LINK_PREFIX_STR "link:"
+#define IOCTL_PREFIX_STR "ioc"
 
 extern int dhd_ioctl_entry_local(struct net_device *net, wl_ioctl_t *ioc, int cmd);
 
@@ -237,6 +240,229 @@ s32 wldev_iovar_getint(
 	}
 	return err;
 }
+
+/* Link specific iovar get/set calls */
+static uint
+wldev_link_mkiovar(u8 link_id, const char *name, const char *data, uint datalen,
+	char *buf, uint buflen)
+{
+	uint len = 0;
+	uint prefix_len = 0;
+	uint name_len = 0;
+	int link_idx;
+
+	/* Expected format "link:<iovar_name> \0 <link_idx><params>" */
+	/* Update link id in the iovar buffer */
+	prefix_len = strlen(LINK_PREFIX_STR);
+	if (memcpy_s(buf, buflen, LINK_PREFIX_STR, prefix_len)) {
+		return BCME_BUFTOOSHORT;
+	}
+	buf += prefix_len;
+	len += prefix_len;
+
+	/* Update the command name */
+	strlcpy(buf, name, (buflen - len));
+	name_len = (strlen(name) + 1);
+	buf += name_len;
+	len += name_len;
+
+	/* Update the linkid value */
+	link_idx = htod32(link_id);
+	if (memcpy_s(buf, (buflen - len), &link_idx, sizeof(int32))) {
+		return BCME_BUFTOOSHORT;
+	}
+	buf += sizeof(int32);
+	len += sizeof(int32);
+
+	/* append data onto the end of the name string */
+	if (data && datalen != 0) {
+		if (memcpy_s(buf, (buflen - len), data, datalen)) {
+			return BCME_BUFTOOSHORT;
+		}
+		len += datalen;
+	}
+
+	return len;
+}
+
+s32
+wldev_link_iovar_getbuf(struct net_device *dev, u8 link_id, s8 *iovar_name,
+	const void *param, u32 paramlen, void *buf, u32 buflen, struct mutex* buf_sync)
+{
+	s32 ret = 0;
+	s32 iovar_len;
+
+	if (buf_sync) {
+		mutex_lock(buf_sync);
+	}
+
+	if (buf && (buflen > 0)) {
+		/* initialize the response buffer */
+		bzero(buf, buflen);
+	} else {
+		ret = BCME_BADARG;
+		goto exit;
+	}
+
+	iovar_len = wldev_link_mkiovar(link_id, iovar_name, param, paramlen, buf, buflen);
+	if (iovar_len > 0) {
+		ret = wldev_ioctl_get(dev, WLC_GET_VAR, buf, buflen);
+	} else {
+		ret = BCME_BUFTOOSHORT;
+	}
+exit:
+	if (buf_sync) {
+		mutex_unlock(buf_sync);
+	}
+
+	return ret;
+}
+
+s32
+wldev_link_iovar_setbuf(struct net_device *dev, u8 link_id, s8 *iovar_name,
+	const void *param, s32 paramlen, void *buf, s32 buflen, struct mutex* buf_sync)
+{
+	s32 ret = 0;
+	s32 iovar_len;
+
+	if (buf_sync) {
+		mutex_lock(buf_sync);
+	}
+
+	iovar_len = wldev_link_mkiovar(link_id, iovar_name, param, paramlen, buf, buflen);
+	if (iovar_len > 0) {
+		ret = wldev_ioctl_set(dev, WLC_SET_VAR, buf, iovar_len);
+	} else {
+		ret = BCME_BUFTOOSHORT;
+	}
+
+	if (buf_sync) {
+		mutex_unlock(buf_sync);
+	}
+
+	return ret;
+}
+
+s32
+wldev_link_iovar_setint(struct net_device *dev, u8 link_id, s8 *iovar, s32 val)
+{
+	s8 iovar_buf[WLC_IOCTL_SMLEN];
+
+	val = htod32(val);
+	bzero(iovar_buf, sizeof(iovar_buf));
+
+	return wldev_link_iovar_setbuf(dev, link_id, iovar, &val, sizeof(val), iovar_buf,
+		sizeof(iovar_buf), NULL);
+}
+
+s32
+wldev_link_iovar_getint(struct net_device *dev, u8 link_id, s8 *iovar, s32 *pval)
+{
+	s8 iovar_buf[WLC_IOCTL_SMLEN];
+	s32 err;
+
+	bzero(iovar_buf, sizeof(iovar_buf));
+	err = wldev_link_iovar_getbuf(dev, link_id, iovar, pval, sizeof(*pval), iovar_buf,
+		sizeof(iovar_buf), NULL);
+	if (err == 0) {
+		(void)memcpy_s(pval, sizeof(*pval), iovar_buf, sizeof(*pval));
+		*pval = dtoh32(*pval);
+	}
+
+	return err;
+}
+
+/* IOCTL get/set per link */
+static uint
+wldev_link_mkioctl(u32 cmd, u8 link_id, const char *data, uint datalen,
+	char *buf, uint buflen)
+{
+	uint len = 0;
+	uint prefix_len = 0;
+	uint name_len = 0;
+	int link_idx;
+	int32 ioctl_cmd;
+
+	/* Expected format "link:ioc\0<link_idx><ioctl_id><param>" */
+	/* Update link id in the iovar buffer */
+	prefix_len = strlen(LINK_PREFIX_STR);
+	if (memcpy_s(buf, buflen, LINK_PREFIX_STR, prefix_len)) {
+		return BCME_BUFTOOSHORT;
+	}
+	buf += prefix_len;
+	len += prefix_len;
+
+	/* Update the command name */
+	strlcpy(buf, IOCTL_PREFIX_STR, (buflen - len));
+	name_len = (strlen(IOCTL_PREFIX_STR) + 1);
+	buf += name_len;
+	len += name_len;
+
+	/* Update the linkid value */
+	link_idx = htod32(link_id);
+	if (memcpy_s(buf, (buflen - len), &link_idx, sizeof(int32))) {
+		return BCME_BUFTOOSHORT;
+	}
+	buf += sizeof(int32);
+	len += sizeof(int32);
+
+	/* Update ioctl cmd */
+	ioctl_cmd = htod32(cmd);
+	if (memcpy_s(buf, (buflen - len), &ioctl_cmd, sizeof(int32))) {
+		return BCME_BUFTOOSHORT;
+	}
+	buf += sizeof(int32);
+	len += sizeof(int32);
+
+	/* append data onto the end of the name string */
+	if (data && datalen != 0) {
+		if (memcpy_s(&buf[len], (buflen - len), data, datalen)) {
+			return BCME_BUFTOOSHORT;
+		}
+		len += datalen;
+	}
+
+	return len;
+}
+
+s32 wldev_link_ioctl_set(
+	struct net_device *dev, u8 link_id, u32 cmd, const void *arg, u32 len)
+{
+	s8 iovar_buf[WLC_IOCTL_SMLEN];
+	s32 ret = 0;
+	s32 iovar_len;
+
+	iovar_len = wldev_link_mkioctl(cmd, link_id, arg, len, iovar_buf, sizeof(iovar_buf));
+	if (iovar_len > 0) {
+		ret = wldev_ioctl_set(dev, WLC_SET_VAR, iovar_buf, iovar_len);
+	} else {
+		ret = BCME_BUFTOOSHORT;
+	}
+
+	return ret;
+}
+
+
+s32 wldev_link_ioctl_get(
+	struct net_device *dev, u8 link_id, u32 cmd, void *arg, u32 len)
+{
+	s8 iovar_buf[WLC_IOCTL_SMLEN];
+	s32 ret = 0;
+	s32 iovar_len;
+
+	iovar_len = wldev_link_mkioctl(cmd, link_id, arg, len, iovar_buf, sizeof(iovar_buf));
+	if (iovar_len > 0) {
+		ret = wldev_ioctl_get(dev, WLC_GET_VAR, iovar_buf, iovar_len);
+		if (ret == 0) {
+			(void)memcpy_s(arg, len, iovar_buf, len);
+		}
+	} else {
+		ret = BCME_BUFTOOSHORT;
+	}
+
+	return ret;
+}
+
 
 /** Format a bsscfg indexed iovar buffer. The bsscfg index will be
  *  taken care of in dhd_ioctl_entry. Internal use only, not exposed to
@@ -462,6 +688,22 @@ int wldev_get_rssi(
 	error = wldev_ioctl_get(dev, WLC_GET_RSSI, scb_val, sizeof(scb_val_t));
 	if (unlikely(error))
 		return error;
+
+	return error;
+}
+
+int wldev_link_get_rssi(
+	struct net_device *dev, u8 link_id, scb_val_t *scb_val)
+{
+	int error = BCME_OK;
+
+	if (!scb_val)
+		return -ENOMEM;
+	bzero(scb_val, sizeof(scb_val_t));
+	error = wldev_link_ioctl_get(dev, link_id, WLC_GET_RSSI, scb_val, sizeof(scb_val_t));
+	if (unlikely(error)) {
+		return error;
+	}
 
 	return error;
 }
