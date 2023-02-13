@@ -4350,6 +4350,7 @@ concate_revision(dhd_bus_t *bus, char *fw_path, char *nv_path)
 			break;
 		case BCM4389_CHIP_ID:
 		case BCM4397_CHIP_GRPID:
+		case BCM4383_CHIP_ID:
 			res = dhd_get_fw_nvram_names(bus->dhd, chipid, chiprev, fw_path,
 				nv_path, map_path);
 			if (res != BCME_OK) {
