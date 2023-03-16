@@ -340,6 +340,7 @@ void wl_event_to_network_order(wl_event_msg_t * evt);
 
 /* tlv ids for roam event */
 #define WLC_ROAM_NO_NETWORKS_TLV_ID 1
+#define WLC_ROAM_SIB_ROAM_PHASE_TLV_ID	2u	/* roam phases completed in SIB roam */
 
 /* No Networks reasons */
 #define WLC_E_REASON_NO_NETWORKS		0x0u /* value 0 means no networks found */
@@ -347,6 +348,14 @@ void wl_event_to_network_order(wl_event_msg_t * evt);
 
 /* bit mask field indicating fail reason */
 typedef uint32 wlc_roam_fail_reason_t;
+
+/* data structure in xtlv[] for id  WLC_ROAM_SIB_ROAM_PHASE_TLV_ID
+ * in wl_roam_event_t
+ */
+typedef struct sib_roam_phase {
+	uint8 num_roam_phase;	/* num of roam phases completed in SIB roam */
+	uint8 pad[3];
+} sib_roam_phase_t;
 
 typedef struct wlc_roam_event_header {
 	uint16 version;		/* version */
@@ -1071,6 +1080,7 @@ typedef enum wl_nan_events {
 
 	WL_NAN_EVENT_OOB_AF_RXTIMEOUT		= 54,	/* OOB AF rx timeout */
 	WL_NAN_EVENT_DW_DWELL_BCN_LOST		= 55,	/* DW Dwell bcn rx fail */
+	WL_NAN_EVENT_SUSPENSION_IND		= 56,	/* Suspension Start/Stop status Indicatin */
 	/* keep WL_NAN_EVENT_INVALID as the last element */
 	WL_NAN_EVENT_INVALID				/* delimiter for max value */
 } nan_app_events_e;

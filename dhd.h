@@ -4228,10 +4228,25 @@ extern uint dhd_sssr_mac_xmtdata(dhd_pub_t *dhdp, uint8 core_idx);
 #define DHD_SSSR_REG_INFO_DEINIT(dhdp)		do { /* noop */ } while (0)
 #endif /* DHD_SSSR_DUMP */
 
+#ifdef DHD_SDTC_ETB_DUMP
+#define DHD_SDTC_ETB_MEMPOOL_SIZE (64 * 1024)
+extern int dhd_sdtc_etb_mempool_init(dhd_pub_t *dhd);
+extern void dhd_sdtc_etb_mempool_deinit(dhd_pub_t *dhd);
+extern void dhd_sdtc_etb_init(dhd_pub_t *dhd);
+extern void dhd_sdtc_etb_deinit(dhd_pub_t *dhd);
+extern void dhd_sdtc_etb_dump(dhd_pub_t *dhd);
+extern int dhd_sdtc_etb_hal_file_dump(void *dev, const void *user_buf, uint32 len);
+#endif /* DHD_SDTC_ETB_DUMP */
+
 #ifdef DHD_COREDUMP
 /* socram size + TLVs */
 #define WLAN_DHD_COREDUMP_SIZE (5u * 1024u * 1024u)
+#ifdef DHD_SDTC_ETB_DUMP
+#define DHD_MEMDUMP_BUFFER_SIZE \
+	(WLAN_DHD_COREDUMP_SIZE + DHD_SSSR_MEMPOOL_SIZE + DHD_SDTC_ETB_MEMPOOL_SIZE)
+#else
 #define DHD_MEMDUMP_BUFFER_SIZE (WLAN_DHD_COREDUMP_SIZE + DHD_SSSR_MEMPOOL_SIZE)
+#endif /* DHD_SDTC_ETB_DUMP */
 extern int dhd_coredump_mempool_init(dhd_pub_t *dhd);
 extern void dhd_coredump_mempool_deinit(dhd_pub_t *dhd);
 #define DHD_COREDUMP_MEMPOOL_INIT(dhdp)		dhd_coredump_mempool_init(dhdp)
@@ -4763,16 +4778,6 @@ extern int dhd_control_he_enab(dhd_pub_t * dhd, uint8 he_enab);
 extern uint8 control_he_enab;
 #endif /* DISABLE_HE_ENAB  || CUSTOM_CONTROL_HE_ENAB */
 
-#ifdef DHD_SDTC_ETB_DUMP
-
-#define DHD_SDTC_ETB_MEMPOOL_SIZE (64 * 1024)
-extern int dhd_sdtc_etb_mempool_init(dhd_pub_t *dhd);
-extern void dhd_sdtc_etb_mempool_deinit(dhd_pub_t *dhd);
-extern void dhd_sdtc_etb_init(dhd_pub_t *dhd);
-extern void dhd_sdtc_etb_deinit(dhd_pub_t *dhd);
-extern void dhd_sdtc_etb_dump(dhd_pub_t *dhd);
-extern int dhd_sdtc_etb_hal_file_dump(void *dev, const void *user_buf, uint32 len);
-#endif /* DHD_SDTC_ETB_DUMP */
 #ifdef WL_AUTO_QOS
 extern void dhd_wl_sock_qos_set_status(dhd_pub_t *dhdp, unsigned long on_off);
 #endif /* WL_AUTO_QOS */

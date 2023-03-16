@@ -302,6 +302,8 @@ typedef uint32 ratespec_t;
 #define WL_SCAN_INC_RNR				0x02U /* Include RNR channels for scan */
 #define WL_SCAN_SKIP_FILS_DISCOVERY_PERIOD	0x04U /* Skip FILS Discovery Period for 6G chans */
 #define WL_SCAN_ACTIVE_6GHZ			0x08U /* Force active scan for 6GHZ channel */
+#define WL_SCAN_LPSC_DISABLE_2G			0x10U    /* Disable 2G scan on scan core */
+#define WL_SCAN_LPSC_DISABLE_5G_6G		0x20U    /* Disable 5G scan on scan core */
 
 /* Value to decide scan type based on scqs */
 #define WL_SC_RETRY_SCAN_MODE_NO_SCAN		0x0u	/* Do not reschedule scan */
@@ -1471,6 +1473,7 @@ typedef uint32 ratespec_t;
 #define WL_LATENCY_VAL		0x00000004
 #define WL_WBUS_VAL		0x00000008
 #define WL_DTPC_DBG_VAL		0x00000010
+#define WL_DYNBW_DBG_VAL	0x00000020
 
 /* number of bytes needed to define a proper bit mask for MAC event reporting */
 #define BCMIO_ROUNDUP(x, y)	((((x) + ((y) - 1)) / (y)) * (y))
@@ -3126,6 +3129,7 @@ enum wlc_capext_ap_subfeature_bitpos {
 	WLC_CAPEXT_AP_BITPOS_NONAX		= 0,
 	WLC_CAPEXT_AP_BITPOS_AX_5G_ONLY		= 1,
 	WLC_CAPEXT_AP_BITPOS_SAE		= 2,
+	WLC_CAPEXT_AP_BITPOS_BCNPROT_AP		= 3,
 	WLC_CAPEXT_AP_BITPOS_MAX
 };
 
@@ -3284,8 +3288,10 @@ enum wlc_capext_feature_bitpos {
 	WLC_CAPEXT_FEATURE_BITPOS_OCT			= 122,
 	WLC_CAPEXT_FEATURE_BITPOS_MBO_MIN		= 123,
 	WLC_CAPEXT_FEATURE_BITPOS_OCV			= 124,
+
 	WLC_CAPEXT_FEATURE_BITPOS_OCV_AP		= 125,
 	WLC_CAPEXT_FEATURE_BITPOS_WIFI_BT5G		= 126,
+	WLC_CAPEXT_FEATURE_BITPOS_SAE_EXT		= 127,
 
 	WLC_CAPEXT_FEATURE_BITPOS_MAX
 };

@@ -1303,11 +1303,7 @@ BWL_PRE_PACKED_STRUCT struct dot11_management_notification {
  */
 #define DOT11_SC_TCLAS_PROCESSING_TERMINATED_POLICY_CONFLICT	129u
 
-#define DOT11_SC_INVALID_PUBLIC_KEY	130u /* Public key format is invalid */
-#define DOT11_SC_PASN_BASE_AKM_FAILED	131u /* Failure from Base AKM processing during PASN */
-#define DOT11_SC_OCI_MISMATCH		132u /* OCI does not match received */
-
-/* Draft P802.11be D1.4 Table 9-78 Status codes */
+/* Draft P802.11be D3.0 Table 9-78 Status codes */
 /* DENIED_STA_AFFILIATED_WITH_MLD_WITH_EXISTING_MLD_ASSOCIATION
  * Association denied because the requesting STA is affiliated with a non-AP MLD
  * that is associated with the AP MLD.
@@ -1333,7 +1329,27 @@ BWL_PRE_PACKED_STRUCT struct dot11_management_notification {
 /* DENIED_EHT_NOT_SUPPORTED
  * Association denied because the requesting STA does not support EHT features.
  */
-#define DOT11_SC_DENIED_EHT_UNSUPPORTED	135u	/* TBD */
+#define DOT11_SC_DENIED_EHT_UNSUPPORTED	135u
+/* DENIED_LINK_ON_WHICH_THE_(RE)ASSOCIATION FRAME_IS_TRANSMITTED_NOT_ACCEPTED
+ * Link not accepted because the link on which the (Re)Association Request frame
+ * is transmitted is not accepted.
+ */
+#define DOT11_SC_DENIED_ASSOC_LINK_NOT_ACCEPTD	139u
+/* EPCS_DENIED_VERIFICATION_FAILURE
+ * EPCS priority access is temporarily denied because the receiving AP MLD
+ * is unable to verify that the non-AP MLD is authorized for an unspecified reason.
+ */
+#define DOT11_SC_EPCS_DENIED_VERIFY_FAIL 140u
+/* DENIED_OPERATION_PARAMETER_UPDATE
+ * Operation parameter update denied because the requested operation parameters
+ * or capabilities are not acceptable.
+ */
+#define DOT11_SC_DENIED_OP_PARM_UPD	141u
+
+/* FIXME - no spec. assigned value yet */
+#define DOT11_SC_INVALID_PUBLIC_KEY	130u /* Public key format is invalid */
+#define DOT11_SC_PASN_BASE_AKM_FAILED	131u /* Failure from Base AKM processing during PASN */
+#define DOT11_SC_OCI_MISMATCH		132u /* OCI does not match received */
 
 /* Info Elts, length of INFORMATION portion of Info Elts */
 #define DOT11_MNG_DS_PARAM_LEN			1	/* d11 management DS parameter length */
@@ -1601,6 +1617,11 @@ enum dot11_tag_ids {
 /* P802.11be D1.6 Table 9-128 Element IDs */
 #define EXT_MNG_QOS_CHAR_ID			113u	/* QoS Characteristics */
 #define DOT11_MNG_QOS_CHAR_ID			(DOT11_MNG_ID_EXT_ID + EXT_MNG_QOS_CHAR_ID)
+#define EXT_MNG_AKM_SUITE_SELECTOR_ID		114u	/* AKM Suite Selector */
+#define DOT11_MNG_AKM_SUITE_SELECTOR_ID		(DOT11_MNG_ID_EXT_ID + \
+						 EXT_MNG_AKM_SUITE_SELECTOR_ID)
+#define EXT_MNG_AID_BITMAP_ID			134u	/* AID Bitmap */
+#define DOT11_MNG_AID_BITMAP_ID			(DOT11_MNG_ID_EXT_ID + EXT_MNG_AID_BITMAP_ID)
 
 /* deprecated definitions, do not use, to be deleted later */
 #define FILS_HLP_CONTAINER_EXT_ID		FILS_EXTID_MNG_HLP_CONTAINER_ID
@@ -2447,6 +2468,16 @@ BWL_PRE_PACKED_STRUCT struct dot11_ext_req_ie {
 	uint8	id_exts[];	/* requested element ID extensions */
 } BWL_POST_PACKED_STRUCT;
 typedef struct dot11_ext_req_ie dot11_ext_req_ie_t;
+
+/* AKM Suite Selector IE */
+BWL_PRE_PACKED_STRUCT struct dot11_akm_suite_selector_ie {
+	uint8 id;			/* DOT11_MNG_ID_EXT_ID */
+	uint8 len;
+	uint8 id_ext;			/* EXT_MNG_AKM_SUITE_SELECTOR_ID */
+	uint8 oui[DOT11_OUI_LEN];	/* WPA2_OUI */
+	uint8 type;			/* AKM type from P802.11-REVme/D2.1 table 9-188 */
+} BWL_POST_PACKED_STRUCT;
+typedef struct dot11_akm_suite_selector_ie dot11_akm_suite_selector_ie_t;
 
 /* This marks the end of a packed structure section. */
 #include <packed_section_end.h>

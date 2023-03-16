@@ -906,13 +906,6 @@ typedef struct phy_periodic_counters_v255 {
 	uint32	last_bcn_seq_num;	/* last beacon seq no. */
 	uint32	last_bcn_ltsf;		/* last beacon ltsf */
 
-	/* Misc general purpose debug counters (will be used for future debugging) */
-	uint32	debug_01;
-	uint32  debug_02;
-	uint32  debug_03;
-	uint32  debug_04;
-	uint32  debug_05;
-
 	uint32	rxanyerr;		/* Any RX error that is not counted by other counters. */
 
 	uint32	phyovfl_cnt;		/* RX PHY FIFO overflow */
@@ -964,19 +957,27 @@ typedef struct phy_periodic_counters_v255 {
 	uint32  p2ptbtt;		/* MCNX TBTT */
 	uint32  p2ptbttmiss;		/* TBTT coming when the radio is on an off channel */
 	uint32  noise_iqest_to;		/* Count of IQ Est timeout during noise measurement */
-	uint16  missbcn_dbg;		/* Number of beacon missed to receive */
+	uint32  ctmode_ufc_cnt;		/* Underflow cnt in ctmode */
 
-	/* Misc general purpose debug counters (will be used for future debugging) */
-	uint16	debug_06;
-	uint16	debug_07;
-	uint16	debug_08;
-	uint16	debug_09;
-	uint16	debug_10;
+	uint16  missbcn_dbg;		/* Number of beacon missed to receive */
 
 	uint8	sc_dccal_incc_cnt;	/* scan dccal counter */
 	uint8	sc_rxiqcal_skip_cnt;	/* scan rxiqcal counter */
 	uint8	sc_noisecal_incc_cnt;	/* scan noise cal counter */
-	uint8	debug_14;
+
+	uint8	debug_01;		/* Misc general purpose debug counters */
+	uint8	debug_02;		/* Misc general purpose debug counters */
+	uint8	debug_03;		/* Misc general purpose debug counters */
+
+	/* Misc general purpose debug counters (will be used for future debugging) */
+	uint32  debug_04;
+	uint32  debug_05;
+	uint32	debug_06;
+	uint32	debug_07;
+	uint16	debug_08;
+	uint16	debug_09;
+	uint16	debug_10;
+	uint16	debug_11;
 } phy_periodic_counters_v255_t;
 
 typedef struct phycal_log_cmn {
@@ -2293,9 +2294,10 @@ typedef struct phy_periodic_log_cmn_v12 {
 	uint16	tempinvalid_count;	/* Count no. of invalid temp. measurements */
 	uint16	log_event_id;		/* logging event id */
 
+	uint16	counter_noise_interrupt_cleared;	/* interrupt cleared on channel change */
+	uint16	counter_noise_cal_cancelled;		/* trigger cancelled on channel change */
+
 	/* Misc general purpose debug counters (will be used for future debugging) */
-	uint16	debug_01;
-	uint16	debug_02;
 	uint16	debug_03;
 	uint16	debug_04;
 	uint16	debug_05;
@@ -2469,9 +2471,6 @@ typedef struct phy_periodic_log_cmn_v255 {
 
 	uint16	deaf_count;		/* Depth of stay_in_carrier_search function */
 
-	uint16	ed20_crs0;		/* ED-CRS status on core 0 */
-	uint16	ed20_crs1;		/* ED-CRS status on core 1 */
-
 	uint16	dcc_attempt_counter;	/* Number of DC cal attempts */
 	uint16	dcc_fail_counter;	/* Number of DC cal failures */
 
@@ -2490,6 +2489,9 @@ typedef struct phy_periodic_log_cmn_v255 {
 	uint16	txpustatus;		/* txpu off definations */
 	uint16	tempinvalid_count;	/* Count no. of invalid temp. measurements */
 	uint16	log_event_id;		/* logging event id */
+
+	uint16	counter_noise_interrupt_cleared;	/* interrupt cleared on channel change */
+	uint16	counter_noise_cal_cancelled;		/* trigger cancelled on channel change */
 
 	/* Misc general purpose debug counters (will be used for future debugging) */
 	uint16	debug_01;
@@ -2537,7 +2539,7 @@ typedef struct phy_periodic_log_cmn_v255 {
 
 	bool	phycal_disable;		/* Set if calibration is disabled */
 	bool	hwpwrctrlen;		/* tx hwpwrctrl enable */
-	uint8	phylog_noise_mode;	/* Noise mode used */
+	uint8	ocl_en_status;		/* OCL requested state and OCL HW state */
 
 	uint32	ed_duration;		/* ccastats: ed_duration */
 	uint16	ed_crs_status;		/* Status of ED and CRS during noise cal */
@@ -2562,11 +2564,6 @@ typedef struct phy_periodic_log_cmn_v255 {
 	uint16	gci_lst_rst_ctr;
 	uint16	gci_lst_sem_fail;
 	uint16	gci_lst_rb_state;
-	uint16	gci_lst_pad01;
-	uint16	gci_lst_pad02;
-	uint16	gci_lst_pad03;
-	uint16	gci_lst_pad04;
-	uint16	gci_lst_pad05;
 	uint16	gci_lst_state_mask;
 	uint16	gci_inv_tx;		/* Tx inv cnt */
 	uint16	gci_inv_rx;		/* Rx inv cnt */
@@ -2585,25 +2582,38 @@ typedef struct phy_periodic_log_cmn_v255 {
 	uint16	gci_rst_wk_rx;
 	uint16	gci_rst_rmac_rx;
 	uint16	gci_rst_tx_rx;
-	uint16	gci_pad01;		/* For additional ucode data */
-	uint16	gci_pad02;		/* For additional ucode data */
-	uint16	gci_pad03;		/* For additional ucode data */
-	uint16	gci_pad04;		/* For additional ucode data */
 
 	uint32	rxsense_disable_req_ch;	/* channel disable requests */
 	uint32	ocl_disable_reqs;	/* OCL disable bitmap */
 
-	int8	rxsense_noise_idx;	/* rxsense detection threshold desense index */
-	int8	rxsense_offset;		/* rxsense min power desense index */
-	uint8	ocl_en_status;		/* OCL requested state and OCL HW state */
-	uint8	lpc_status;		/* Flag to enable/disable LPC, and runtime flag status */
+	uint32	interference_mode;	/* interference mitigation mode */
+	uint32	power_mode;		/* LP/VLP logging */
 
 	uint16	rspfrm_ed_txncl_cnt;	/* Response frame not sent due to ED */
-
 	int16	last_cal_temp;
 	uint8	cal_reason;		/* reason for the cal */
 	uint8	cal_suppressed_cntr_ed;	/* counter including ss, mp cals, MSB is current state */
+	uint8	lpc_status;		/* Flag to enable/disable LPC, and runtime flag status */
+
 	uint8	noise_cal_mode;		/* noisecal mode */
+	uint16	noise_cal_timeout;	/* noisecal timeout */
+
+	uint16	txpwr_recalc_reasons;	/* Reasons bitmap for triggered Tx pwr recalc */
+
+	uint16	channel_active;		/* Channel active status */
+
+	int8	rxsense_noise_idx;	/* rxsense detection threshold desense index */
+	int8	rxsense_offset;		/* rxsense min power desense index */
+	uint8	lpf_lut_type;		/* high or low noise radio lpf lut */
+	uint8	phylog_noise_mode;	/* Noise mode used */
+	uint8	noisecal_saved_radio_lpf_lut_type;	/* high or low noise radio lpf lut */
+	uint8	rccal_lpf_tmout;
+	uint8	rccal_tia_tmout;
+	uint8	rccal_rxpll_tmout;
+
+	uint8	rfem_rxmode_curr_hwstate;
+	uint8	rfem_rxmode_bands_req;		/* mode as requested by SW layer */
+	uint8	rfem_rxmode_bands_applied;	/* mode currently configured in HW */
 
 	/* Misc general purpose debug counters (will be used for future debugging) */
 	uint8	debug_06;
@@ -2611,15 +2621,8 @@ typedef struct phy_periodic_log_cmn_v255 {
 	uint8	debug_08;
 	uint8	debug_09;
 	uint8	debug_10;
-
-	uint32	interference_mode;	/* interference mitigation mode */
-	uint32	power_mode;		/* LP/VLP logging */
-
-	/* Misc general purpose debug counters (will be used for future debugging) */
 	uint32	debug_11;
 	uint32	debug_12;
-	uint32	debug_13;
-	uint32	debug_14;
 } phy_periodic_log_cmn_v255_t;
 
 typedef struct phy_periodic_log_core {
@@ -2869,8 +2872,8 @@ typedef struct phy_periodic_log_core_v255 {
 	int8	estpwr;		/* tx powerDet value */
 	int8	crsmin_th_idx;	/* idx used to lookup crs min thresholds */
 	int8	ed_threshold;	/* ed threshold */
+	uint16	ed20_crs;	/* ED-CRS status */
 
-	uint16	bad_txbaseidx_cnt;	/* cntr for tx_baseidx=127 in healthcheck */
 	uint16	curr_tssival;	/* TxPwrCtrlInit_path[01].TSSIVal */
 	uint16	pwridx_init;	/* TxPwrCtrlInit_path[01].pwrIndex_init_path[01] */
 	uint16	auxphystats;
@@ -2881,13 +2884,17 @@ typedef struct phy_periodic_log_core_v255 {
 	uint16	flexpwrdig3;
 	uint16	flexpwrdig4;
 	uint16	flexgaininfo_A;
+
+	uint16	bad_txbaseidx_cnt;	/* cntr for tx_baseidx=127 in healthcheck */
+	uint16	tpc_vmid;
+
 	uint16	debug_05;	/* multipurpose debug register */
+	uint8	tpc_av;
 
 	/* Misc general purpose debug counters (will be used for future debugging) */
 	uint8	debug_06;
 	uint8	debug_07;
 	uint8	debug_08;
-	uint8	debug_09;
 
 	int8	phy_noise_pwr_array[PHY_NOISE_PWR_ARRAY_SIZE];	/* noise buffer array */
 } phy_periodic_log_core_v255_t;
@@ -3150,27 +3157,31 @@ typedef struct phy_periodic_obss_stats_v255 {
 	uint8	obss_need_updt;				/* BW update needed flag */
 	uint8	obss_mit_status;			/* obss mitigation status */
 	uint8	obss_curr_det[ACPHY_OBSS_SUBBAND_CNT];	/* obss curr detection */
-	uint16	dynbw_init_reducebw_cnt;		/*
-							 * bandwidth reduction cnt of
-							 * initiator (txrts+rxcts)
-							 */
-	uint16	dynbw_resp_reducebw_cnt;		/*
-							 * bandwidth reduction cnt of
-							 * responder (rxrts+txcts)
-							 */
-	uint16	dynbw_rxdata_reducebw_cnt;		/*
-							 * rx data cnt with reduced bandwidth
-							 * as txcts requested
-							 */
 	uint16	obss_mmt_skip_cnt;			/* mmt skipped due to powersave */
 	uint16	obss_mmt_no_result_cnt;			/* mmt with no result */
 	uint16	obss_mmt_intr_err_cnt;			/* obss reg mismatch between ucode and fw */
+	uint16	dynbw_reqbw_txrts20_cnt;		/* RTS Tx in 20MHz cnt */
+	uint16	dynbw_reqbw_txrts40_cnt;		/* RTS Tx in 40MHz cnt */
+	uint16	dynbw_reqbw_txrts80_cnt;		/* RTS Tx in 80MHz cnt */
+	uint16	dynbw_grntbw_txcts20_cnt;		/* CTS Tx in 20MHz cnt */
+	uint16	dynbw_grntbw_txcts40_cnt;		/* CTS Tx in 40MHz cnt */
+	uint16	dynbw_grntbw_txcts80_cnt;		/* CTS Tx in 80MHz cnt */
+	uint16	dynbw_reqbw_rxrts20_cnt;		/* Rx dynamicRTS in 20MHz cnt */
+	uint16	dynbw_reqbw_rxrts40_cnt;		/* Rx dynamicRTS in 40MHz cnt */
+	uint16	dynbw_reqbw_rxrts80_cnt;		/* Rx dynamicRTS in 80MHz cnt */
+	uint16	dynbw_grntbw_rxcts20_cnt;		/* Rx CTS responses in 20MHz cnt */
+	uint16	dynbw_grntbw_rxcts40_cnt;		/* Rx CTS responses in 40MHz cnt */
+	uint16	dynbw_grntbw_rxcts80_cnt;		/* Rx CTS responses in 80MHz cnt */
+	uint16	dynbw_availbw_blk[DYNBW_MAX_NUM];	/* BW histogram when Rx RTS */
+	int8	obss_pwrest[WL_OBSS_ANT_MAX][ACPHY_OBSS_SUBBAND_CNT]; /* OBSS signal power per
+									* sub-band in dBm
+									*/
 	uint8	obss_last_rec_bw;			/* last recommended bw to wlc-Sent to SW */
 
 	/* Misc general purpose debug counters (will be used for future debugging) */
 	uint8	debug_01;
-	uint16	debug_02;
-	uint16	debug_03;
+	uint8	debug_02;
+	uint8	debug_03;
 	uint16	debug_04;
 	uint16	debug_05;
 } phy_periodic_obss_stats_v255_t;
@@ -3183,15 +3194,15 @@ typedef struct phy_periodic_scca_stats_v1 {
 	uint32 core1_smask_val_bk;	/* bt fem control related */
 	int32 asym_intf_ed_thresh;
 
-	int16 crsminpoweru0;			/* crsmin thresh */
-	int16 crsminpoweroffset0;		/* ac_offset core0 */
-	int16 crsminpoweroffset1;		/* ac_offset core1 */
-	int16 Core0InitGainCodeB;		/* rx mitigation: eLNA bypass setting */
-	int16 Core1InitGainCodeB;		/* rx mitigation: eLNA bypass setting */
-	int16 ed_crsEn;				/* phyreg(ed_crsEn) */
-	int16 nvcfg0;				/* LLR deweighting coefficient */
-	int16 SlnaRxMaskCtrl0;
-	int16 SlnaRxMaskCtrl1;
+	uint16 crsminpoweru0;			/* crsmin thresh */
+	uint16 crsminpoweroffset0;		/* ac_offset core0 */
+	uint16 crsminpoweroffset1;		/* ac_offset core1 */
+	uint16 Core0InitGainCodeB;		/* rx mitigation: eLNA bypass setting */
+	uint16 Core1InitGainCodeB;		/* rx mitigation: eLNA bypass setting */
+	uint16 ed_crsEn;				/* phyreg(ed_crsEn) */
+	uint16 nvcfg0;				/* LLR deweighting coefficient */
+	uint16 SlnaRxMaskCtrl0;
+	uint16 SlnaRxMaskCtrl1;
 	uint16 save_SlnaRxMaskCtrl0;
 	uint16 save_SlnaRxMaskCtrl1;
 	uint16 asym_intf_ncal_req_chspec;	/* channel request noisecal */
@@ -3219,8 +3230,8 @@ typedef struct phy_periodic_scca_stats_v1 {
 	int8 noisecalc_cmplx_pwr_dbm[2];
 	uint8 gain_applied;		/* from phy_ac_rxgcrs_set_init_clip_gain() */
 
-	int8 asym_intf_tx_smartcca_cm;
-	int8 asym_intf_rx_noise_mit_cm;
+	uint8 asym_intf_tx_smartcca_cm;
+	uint8 asym_intf_rx_noise_mit_cm;
 	int8 asym_intf_avg_noise[2];
 	int8 asym_intf_latest_noise[2];
 	/* used to calculate noise_delta for rx mitigation on/off */
@@ -3242,15 +3253,15 @@ typedef struct phy_periodic_scca_stats_v2 {
 	uint32 core1_smask_val_bk;	/* bt fem control related */
 	int32 asym_intf_ed_thresh;
 
-	int16 crsminpoweru0;			/* crsmin thresh */
-	int16 crsminpoweroffset0;		/* ac_offset core0 */
-	int16 crsminpoweroffset1;		/* ac_offset core1 */
-	int16 Core0InitGainCodeB;		/* rx mitigation: eLNA bypass setting */
-	int16 Core1InitGainCodeB;		/* rx mitigation: eLNA bypass setting */
-	int16 ed_crsEn;				/* phyreg(ed_crsEn) */
-	int16 nvcfg0;				/* LLR deweighting coefficient */
-	int16 SlnaRxMaskCtrl0;
-	int16 SlnaRxMaskCtrl1;
+	uint16 crsminpoweru0;			/* crsmin thresh */
+	uint16 crsminpoweroffset0;		/* ac_offset core0 */
+	uint16 crsminpoweroffset1;		/* ac_offset core1 */
+	uint16 Core0InitGainCodeB;		/* rx mitigation: eLNA bypass setting */
+	uint16 Core1InitGainCodeB;		/* rx mitigation: eLNA bypass setting */
+	uint16 ed_crsEn;			/* phyreg(ed_crsEn) */
+	uint16 nvcfg0;				/* LLR deweighting coefficient */
+	uint16 SlnaRxMaskCtrl0;
+	uint16 SlnaRxMaskCtrl1;
 	uint16 save_SlnaRxMaskCtrl0;
 	uint16 save_SlnaRxMaskCtrl1;
 	uint16 asym_intf_ncal_req_chspec;	/* channel request noisecal */
@@ -3278,8 +3289,8 @@ typedef struct phy_periodic_scca_stats_v2 {
 	int8 noisecalc_cmplx_pwr_dbm[2];
 	uint8 gain_applied;		/* from phy_ac_rxgcrs_set_init_clip_gain() */
 
-	int8 asym_intf_tx_smartcca_cm;
-	int8 asym_intf_rx_noise_mit_cm;
+	uint8 asym_intf_tx_smartcca_cm;
+	uint8 asym_intf_rx_noise_mit_cm;
 	int8 asym_intf_avg_noise[2];
 	int8 asym_intf_latest_noise[2];
 	/* used to calculate noise_delta for rx mitigation on/off */
@@ -3301,16 +3312,16 @@ typedef struct phy_periodic_scca_stats_v3 {
 	uint32	asym_intf_host_req_mit_turnon_time;
 	int32	asym_intf_ed_thresh;
 
-	int16	crsminpoweru0;			/* crsmin thresh */
-	int16	crsminpoweroffset0;		/* ac_offset core0 */
-	int16	crsminpoweroffset1;		/* ac_offset core1 */
-	int16	ed_crsEn;			/* phyreg(ed_crsEn) */
-	int16	nvcfg0;				/* LLR deweighting coefficient */
-	int16	SlnaRxMaskCtrl0;
-	int16	SlnaRxMaskCtrl1;
-	int16	CRSMiscellaneousParam;
-	int16	AntDivConfig2059;
-	int16	HPFBWovrdigictrl;
+	uint16	crsminpoweru0;			/* crsmin thresh */
+	uint16	crsminpoweroffset0;		/* ac_offset core0 */
+	uint16	crsminpoweroffset1;		/* ac_offset core1 */
+	uint16	ed_crsEn;			/* phyreg(ed_crsEn) */
+	uint16	nvcfg0;				/* LLR deweighting coefficient */
+	uint16	SlnaRxMaskCtrl0;
+	uint16	SlnaRxMaskCtrl1;
+	uint16	CRSMiscellaneousParam;
+	uint16	AntDivConfig2059;
+	uint16	HPFBWovrdigictrl;
 	uint16	save_SlnaRxMaskCtrl0;
 	uint16	save_SlnaRxMaskCtrl1;
 	uint16	asym_intf_ncal_req_chspec;	/* channel request noisecal */
@@ -3335,8 +3346,8 @@ typedef struct phy_periodic_scca_stats_v3 {
 	int8	noisecalc_cmplx_pwr_dbm[2];
 	int8	asym_intf_ant_noise[2];
 
-	int8	asym_intf_tx_smartcca_cm;
-	int8	asym_intf_rx_noise_mit_cm;
+	uint8	asym_intf_tx_smartcca_cm;
+	uint8	asym_intf_rx_noise_mit_cm;
 	int8	asym_intf_avg_noise[2];
 	int8	asym_intf_latest_noise[2];
 	/* used to calculate noise_delta for rx mitigation on/off */
@@ -3356,16 +3367,16 @@ typedef struct phy_periodic_scca_stats_v255 {
 	uint32 asym_intf_host_req_mit_turnon_time;
 	int32 asym_intf_ed_thresh;
 
-	int16 crsminpoweru0;			/* crsmin thresh */
-	int16 crsminpoweroffset0;		/* ac_offset core0 */
-	int16 crsminpoweroffset1;		/* ac_offset core1 */
-	int16 ed_crsEn;				/* phyreg(ed_crsEn) */
-	int16 nvcfg0;				/* LLR deweighting coefficient */
-	int16 SlnaRxMaskCtrl0;
-	int16 SlnaRxMaskCtrl1;
-	int16	CRSMiscellaneousParam;
-	int16	AntDivConfig2059;
-	int16	HPFBWovrdigictrl;
+	uint16 crsminpoweru0;                   // crsmin thresh
+	uint16 crsminpoweroffset0;              // ac_offset core0
+	uint16 crsminpoweroffset1;              // ac_offset core1
+	uint16 ed_crsEn;                        // phyreg(ed_crsEn)
+	uint16 nvcfg0;                          // LLR deweighting coefficient
+	uint16 SlnaRxMaskCtrl0;
+	uint16 SlnaRxMaskCtrl1;
+	uint16 CRSMiscellaneousParam;
+	uint16 AntDivConfig2059;
+	uint16 HPFBWovrdigictrl;
 	uint16 save_SlnaRxMaskCtrl0;
 	uint16 save_SlnaRxMaskCtrl1;
 	uint16 asym_intf_ncal_req_chspec;	/* channel request noisecal */
@@ -3388,10 +3399,10 @@ typedef struct phy_periodic_scca_stats_v255 {
 
 	/* noise at antenna from phy_ac_noise_calc() */
 	int8 noisecalc_cmplx_pwr_dbm[2];
-	int8	asym_intf_ant_noise[2];
+	int8 asym_intf_ant_noise[2];
 
-	int8 asym_intf_tx_smartcca_cm;
-	int8 asym_intf_rx_noise_mit_cm;
+	uint8 asym_intf_tx_smartcca_cm;
+	uint8 asym_intf_rx_noise_mit_cm;
 	int8 asym_intf_avg_noise[2];
 	int8 asym_intf_latest_noise[2];
 	/* used to calculate noise_delta for rx mitigation on/off */
