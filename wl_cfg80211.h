@@ -797,39 +797,40 @@ do {									\
 
 /* Cipher suites */
 #ifndef WLAN_CIPHER_SUITE_PMK
-#define WLAN_CIPHER_SUITE_PMK			0x00904C00
+#define WLAN_CIPHER_SUITE_PMK             0x00904C00
 #endif /* WLAN_CIPHER_SUITE_PMK */
 
 #ifndef WLAN_AKM_SUITE_FT_8021X
-#define WLAN_AKM_SUITE_FT_8021X			0x000FAC03
+#define WLAN_AKM_SUITE_FT_8021X	          0x000FAC03
 #endif /* WLAN_AKM_SUITE_FT_8021X */
 
 #ifndef WLAN_AKM_SUITE_FT_PSK
-#define WLAN_AKM_SUITE_FT_PSK			0x000FAC04
+#define WLAN_AKM_SUITE_FT_PSK             0x000FAC04
 #endif /* WLAN_AKM_SUITE_FT_PSK */
 
 #ifndef WLAN_AKM_SUITE_8021X_SUITE_B
-#define WLAN_AKM_SUITE_8021X_SUITE_B		0x000FAC0B
-#define WLAN_AKM_SUITE_8021X_SUITE_B_192	0x000FAC0C
+#define WLAN_AKM_SUITE_8021X_SUITE_B      0x000FAC0B
+#define WLAN_AKM_SUITE_8021X_SUITE_B_192  0x000FAC0C
 #endif /* WLAN_AKM_SUITE_8021X_SUITE_B */
 
 #ifndef WLAN_AKM_SUITE_FT_8021X_SHA384
-#define WLAN_AKM_SUITE_FT_8021X_SHA384		0x000FAC0D
+#define WLAN_AKM_SUITE_FT_8021X_SHA384    0x000FAC0D
 #endif /* WLAN_AKM_SUITE_FT_8021X_SHA384 */
 
-#define WL_AKM_SUITE_SHA256_1X  0x000FAC05
-#define WL_AKM_SUITE_SHA256_PSK 0x000FAC06
+#define WL_AKM_SUITE_SHA256_1X            0x000FAC05
+#define WL_AKM_SUITE_SHA256_PSK           0x000FAC06
 
-#define WLAN_AKM_SUITE_SAE_SHA256		0x000FAC08
-#define WLAN_AKM_SUITE_SAE_EXT			0x000FAC24
-#define MAX_NUM_MULTI_AKM_SUITES		4u
+#define WLAN_AKM_SUITE_SAE_SHA256         0x000FAC08
+#define WLAN_AKM_SUITE_SAE_EXT            0x000FAC24
+#define MAX_NUM_MULTI_AKM_SUITES          4u
 #ifndef WLAN_AKM_SUITE_FILS_SHA256
-#define WLAN_AKM_SUITE_FILS_SHA256		0x000FAC0E
-#define WLAN_AKM_SUITE_FILS_SHA384		0x000FAC0F
-#define WLAN_AKM_SUITE_FT_FILS_SHA256		0x000FAC10
-#define WLAN_AKM_SUITE_FT_FILS_SHA384		0x000FAC11
+#define WLAN_AKM_SUITE_FILS_SHA256        0x000FAC0E
+#define WLAN_AKM_SUITE_FILS_SHA384        0x000FAC0F
+#define WLAN_AKM_SUITE_FT_FILS_SHA256     0x000FAC10
+#define WLAN_AKM_SUITE_FT_FILS_SHA384     0x000FAC11
 #endif /* WLAN_AKM_SUITE_FILS_SHA256 */
-#define WLAN_AKM_SUITE_SAE_EXT_PSK		0x000FAC18
+#define WLAN_AKM_SUITE_SAE_EXT_PSK        0x000FAC18
+#define WLAN_AKM_SUITE_FT_SAE_EXT         0x000FAC19
 
 #define MIN_VENDOR_EXTN_IE_LEN		2
 
@@ -1315,8 +1316,8 @@ struct wl_eap_exp {
 typedef struct wl_eap_exp wl_eap_exp_t;
 
 #ifdef WL_MLO
-#define MAX_MLO_LINK 3
 #define NON_ML_LINK 0xFFu
+#define WL_ASSOC_LINK_IDX 0u
 typedef struct wl_mlo_link {
 	u8 link_id;
 	u8 link_idx;
@@ -1331,6 +1332,7 @@ typedef struct wl_mlo_link_info {
 	u8 num_links;
 	u8 active_links;
 	struct net_device *mld_dev;
+	u8 peer_mld_addr[ETH_ALEN];
 	wl_mlo_link_t links[MAX_MLO_LINK];
 } wl_mlo_link_info_t;
 
@@ -1387,7 +1389,7 @@ struct net_info {
 	wl_mlo_link_info_t mlinfo;	/* For MLO Link interface */
 #endif /* WL_MLO */
 	u8 *qos_up_table;
-	bool reg_update_on_disconnect;
+	bool reg_update_reqd;
 	bool td_policy_set;
 };
 
@@ -1816,6 +1818,12 @@ typedef struct wl_wps_session {
 #ifndef WL_STATIC_IFNAME_PREFIX
 #define WL_STATIC_IFNAME_PREFIX "wlan%d"
 #endif /* WL_STATIC_IFNAME */
+
+#ifdef WL_DYNAMIC_CHAN_POLICY
+#define DYN_CHAN_POLICY_INDOOR   (1u << 0u)
+#define DYN_CHAN_POLICY_DFS      (1u << 1u)
+#define DYN_CHAN_POLICY_MASK     0x0003u
+#endif /* WL_DYNAMIC_CHAN_POLICY */
 
 typedef struct buf_data {
 	u32 ver; /* version of struct */
@@ -2349,6 +2357,7 @@ struct bcm_cfg80211 {
 	uint8 num_radios;		/* number of active radios */
 #ifdef WL_MLO
 	wl_mlo_config_t mlo;
+	bool multilink_enforced;
 #endif /* WL_MLO */
 	uint32 ap_bw_limit;
 	uint32 ap_bw_chspec;
@@ -2360,7 +2369,7 @@ struct bcm_cfg80211 {
 	/* to track the wiphy lock held context for deleting iface */
 	bool wiphy_lock_held;
 	u8 *chan_info_list;
-	bool dyn_indoor_policy;
+	u32 dyn_chan_policy;
 	bool bcnprot_ap;
 };
 
@@ -3338,6 +3347,8 @@ wl_sup_event_ieee80211_error(u32 reason)
 	cfg80211_port_authorized(ndev, bssid, kflags)
 #endif /* WL_MLO_BKPORT_NEW_PORT_AUTH */
 
+#define IS_CHSPEC_SCC(chspec1, chspec2) \
+	(wf_chspec_primary20_chspec(chspec1) == wf_chspec_primary20_chspec(chspec2))
 
 extern s32 wl_cfg80211_attach(struct net_device *ndev, void *context);
 extern void wl_cfg80211_detach(struct bcm_cfg80211 *cfg);
@@ -3912,4 +3923,7 @@ extern s32 wl_cfg80211_actframe_fillup_v2(struct bcm_cfg80211 *cfg, bcm_struct_c
 #define WL_CFG_RSPEC_ENCODING_MASK  0x07000000u
 #define WL_CFG_RSPEC_ISEHT(rspec) (((rspec) & WL_CFG_RSPEC_ENCODING_MASK) == WL_RSPEC_ENCODE_EHT)
 extern bool wl_cfg80211_get_rsdb_mode(struct bcm_cfg80211 *cfg);
+#ifdef WL_MLO
+extern s32 wl_cfg80211_get_mlo_link_status(struct bcm_cfg80211 *cfg, struct net_device *dev);
+#endif /* WL_MLO */
 #endif /* _wl_cfg80211_h_ */

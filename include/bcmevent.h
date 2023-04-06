@@ -593,7 +593,8 @@ typedef struct wl_event_sdb_trans {
 #define WLC_E_PRUNE_AP_RESTRICT_POLICY		37u	/* Prune by AP restrict policy */
 #define WLC_E_PRUNE_SAE_PWE_PWDID		38u	/* Prune by SAE PWE/PWD ID restriction */
 #define WLC_E_PRUNE_SAE_TRANSITION_DISABLE	39u	/* Prune by  SAE transition disable */
-#define WLC_E_PRUNE_BCNPROT_DISABLED	40u	/* Prune AP due to no Beacon protection */
+#define WLC_E_PRUNE_BCNPROT_DISABLED		40u	/* Prune AP due to no Beacon protection */
+#define WLC_E_PRUNE_RNR_INVALID_OPCLASS		41u	/* Prune RNR-invalid operating class */
 
 
 /* WPA failure reason codes carried in the WLC_E_PSK_SUP event */
@@ -893,14 +894,14 @@ typedef BWL_PRE_PACKED_STRUCT struct wl_sd_tlv {
 	uint8	protocol;		/* service protocol type */
 	uint8	transaction_id;		/* service transaction id */
 	uint8	status_code;		/* status code */
-	uint8	data[1];		/* response data */
+	uint8	data[];		/* response data */
 } BWL_POST_PACKED_STRUCT wl_sd_tlv_t;
 
 /* service discovery event data */
 typedef BWL_PRE_PACKED_STRUCT struct wl_event_sd {
 	uint16	channel;			/* channel */
 	uint8	count;				/* number of tlvs */
-	wl_sd_tlv_t tlv[BCM_FLEX_ARRAY];	/* service discovery TLV */
+	uint8   tlv[];	/* wl_sd_tlv_t TLV */
 } BWL_POST_PACKED_STRUCT wl_event_sd_t;
 
 /* WLC_E_PKT_FILTER event sub-classification codes */

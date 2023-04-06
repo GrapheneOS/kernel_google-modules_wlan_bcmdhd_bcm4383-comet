@@ -5759,34 +5759,6 @@ ipv6_tcp_hdr_cksum(uint8 *ipv6, uint8 *tcp, uint16 tcp_len)
 
 void *_bcmutils_dummy_fn = NULL;
 
-/* GROUP 1 --- start
- * These function under GROUP 1 are general purpose functions to do complex number
- * calculations and square root calculation.
- */
-
-uint32 sqrt_int(uint32 value)
-{
-	uint32 root = 0, shift = 0;
-
-	/* Compute integer nearest to square root of input integer value */
-	for (shift = 0; shift < 32; shift += 2) {
-		if (((0x40000000u >> shift) + root) <= value) {
-			value -= ((0x40000000u >> shift) + root);
-			root = (root >> 1) | (0x40000000u >> shift);
-		}
-		else {
-			root = root >> 1;
-		}
-	}
-
-	/* round to the nearest integer */
-	if (root < value) ++root;
-
-	return root;
-}
-
-/* GROUP 1 --- end */
-
 /* read/write field in a consecutive bits in an octet array.
  * 'addr' is the octet array's start byte address
  * 'size' is the octet array's byte size

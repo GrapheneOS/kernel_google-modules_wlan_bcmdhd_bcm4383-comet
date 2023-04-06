@@ -1737,6 +1737,70 @@ wl_is_sta_connected(struct bcm_cfg80211 *cfg)
 	return sta_connected;
 }
 
+#ifdef WL_MLO
+static chanspec_t
+wl_cfg80211_set_chan_mlo_concurrency(struct bcm_cfg80211 *cfg, struct net_info *mld_netinfo,
+	chanspec_t ap_chspec)
+{
+	chanspec_t sta_chspec = INVCHANSPEC;
+	chanspec_t target_chspec = INVCHANSPEC;
+	chanspec_t pri_chspec = INVCHANSPEC;
+	chanspec_t sta_chanspecs[WLC_BAND_6G + 1] = {INVCHANSPEC};
+	int i;
+	u16 sta_band = 0;
+
+	(void)memset_s(sta_chanspecs, (sizeof(sta_chanspecs)),
+		INVCHANSPEC, (sizeof(sta_chanspecs)));
+
+	for (i = 0; i < mld_netinfo->mlinfo.num_links; i++) {
+		/* Go through STA links and retrieve band+channel information */
+		sta_chspec = mld_netinfo->mlinfo.links[i].chspec;
+		sta_band = CHSPEC_TO_WLC_BAND(CHSPEC_BAND(sta_chspec));
+		sta_chanspecs[sta_band] = sta_chspec;
+		/* Update the primary chanspec */
+		if (mld_netinfo->mlinfo.links[i].link_idx == 0) {
+			pri_chspec =  sta_chspec;
+		}
+	}
+
+	/* If incoming AP band is 6G and STA has 6G dominant link, attempt SCC */
+	if (CHSPEC_IS6G(sta_chanspecs[WLC_BAND_6G]) && CHSPEC_IS6G(ap_chspec)) {
+		if (!wl_is_6g_restricted(cfg, sta_chanspecs[WLC_BAND_6G]) &&
+			(!wf_chspec_valid(sta_chanspecs[WLC_BAND_5G]) ||
+			wl_is_link_sleepable(cfg, pri_chspec, sta_chanspecs[WLC_BAND_5G])) &&
+			IS_CHSPEC_SCC(sta_chanspecs[WLC_BAND_6G], ap_chspec)) {
+			 /* if channel is not restricted, attempt 6G SCC */
+			target_chspec =	wf_chspec_primary20_chspec(sta_chanspecs[WLC_BAND_6G]);
+			WL_DBG(("6G SCC case 0x%x\n", target_chspec));
+		}
+	/* if STA dominant link is 5G and AP band is 5G link, attempt SCC */
+	} else if (CHSPEC_IS5G(sta_chanspecs[WLC_BAND_5G]) && CHSPEC_IS5G(ap_chspec)) {
+		if (!wl_is_5g_restricted(cfg, sta_chanspecs[WLC_BAND_5G]) &&
+			(!wf_chspec_valid(sta_chanspecs[WLC_BAND_6G]) ||
+			wl_is_link_sleepable(cfg, pri_chspec, sta_chanspecs[WLC_BAND_6G])) &&
+			IS_CHSPEC_SCC(sta_chanspecs[WLC_BAND_5G], ap_chspec)) {
+			target_chspec = wf_chspec_primary20_chspec(sta_chanspecs[WLC_BAND_5G]);
+			WL_DBG(("5G SCC case 0x%x\n", target_chspec));
+		}
+	/* STA dominant link 2G case */
+	} else if (CHSPEC_IS2G(ap_chspec)) {
+		if (CHSPEC_IS2G(sta_chanspecs[WLC_BAND_2G])) {
+			if (!wl_is_2g_restricted(cfg, sta_chanspecs[WLC_BAND_2G]) &&
+				IS_CHSPEC_SCC(sta_chanspecs[WLC_BAND_2G], ap_chspec)) {
+				target_chspec = wf_chspec_primary20_chspec(
+					sta_chanspecs[WLC_BAND_2G]);
+				WL_DBG(("2G SCC case 0x%x\n", target_chspec));
+			}
+		} else {
+			target_chspec = wf_chspec_primary20_chspec(ap_chspec);
+		}
+	}
+
+	WL_INFORM_MEM(("Target chanspec set to %x\n", target_chspec));
+	return target_chspec;
+}
+#endif /* WL_MLO */
+
 s32
 wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 	struct ieee80211_channel *chan,
@@ -1752,6 +1816,7 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 #if defined(SUPPORT_AP_INIT_BWCONF)
 	u32 configured_bw;
 #endif /* SUPPORT_AP_INIT_BWCONF */
+	u8 mlo_num_links = 0;
 
 	BCM_REFERENCE(dhd);
 
@@ -1797,55 +1862,55 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 		return -EINVAL;
 	}
 
-	if (ap_oper_data.count == 1) {
-		chanspec_t sta_chspec;
-		chanspec_t ch = ap_oper_data.iface[0].chspec;
-		u16 ap_band, incoming_band;
-
-		/* Single AP case. Bring up the AP in the other band */
-		ap_band = CHSPEC_TO_WLC_BAND(ch);
-		incoming_band = CHSPEC_TO_WLC_BAND(chspec);
-		WL_INFORM_MEM(("AP operational in band:%d and incoming band:%d\n",
-			ap_band, incoming_band));
-		/* if incoming and operational AP band is same, it is invalid case */
-		if (ap_band == incoming_band) {
-			WL_ERR(("DUAL AP not allowed on same band\n"));
-			return -ENOTSUPP;
-		}
-		sta_chspec = wl_cfg80211_get_sta_chanspec(cfg);
-		if (sta_chspec && wf_chspec_valid(sta_chspec)) {
-			/* 5G cant be upgraded to 6G since dual band clients
-			 * wont be able able to scan 6G
-			 */
-			if (CHSPEC_IS6G(sta_chspec) && (incoming_band == WLC_BAND_5G)) {
-				WL_ERR(("DUAL AP not allowed for"
-					" 5G band as sta in 6G chspec 0x%x\n",
-					chspec));
-				return -ENOTSUPP;
-			}
-			if (incoming_band == CHSPEC_TO_WLC_BAND(sta_chspec)) {
-				/* use sta chanspec for SCC */
-				chspec = sta_chspec;
-			}
-		}
-	}
-
 	if (wl_get_mode_by_netdev(cfg, dev) == WL_MODE_AP &&
 		DHD_OPMODE_STA_SOFTAP_CONCURR(dhd) &&
 		wl_get_drv_status(cfg, CONNECTED, bcmcfg_to_prmry_ndev(cfg))) {
-		chanspec_t sta_chanspec;
 #ifdef WL_MLO
-		if (INVCHANSPEC != (sta_chanspec = wl_mlo_get_primary_sta_chspec(cfg))) {
-			WL_INFORM_MEM(("Using ML primary link sta chanspec 0x%x\n",
-				sta_chanspec));
-		} else
-#endif /* WL_MLO */
-		{
-			chanspec_t *psta_chanspec = (chanspec_t *)wl_read_prof(cfg,
-				bcmcfg_to_prmry_ndev(cfg), WL_PROF_CHAN);
-			sta_chanspec = *psta_chanspec;
+		struct net_info *mld_netinfo = NULL;
+		u8 ml_count;
+
+		mld_netinfo = wl_cfg80211_get_mld_netinfo_by_cfg(cfg, &ml_count);
+		if (mld_netinfo) {
+			mlo_num_links = mld_netinfo->mlinfo.num_links;
 		}
-		if (chan->band == wl_get_nl80211_band(CHSPEC_BAND(sta_chanspec))) {
+#endif /* WL_MLO */
+
+		if (mlo_num_links > 1) {
+			chspec = wl_cfg80211_set_chan_mlo_concurrency(cfg, mld_netinfo, chspec);
+			if (chspec == INVCHANSPEC) {
+				WL_ERR(("Invalid target chanspec, MLO case %x\n", chspec));
+				return -EINVAL;
+			}
+		} else {
+			chanspec_t sta_chanspec;
+			if (ap_oper_data.count == 1) {
+				chanspec_t sta_chspec;
+				u16 incoming_band;
+
+				incoming_band = CHSPEC_TO_WLC_BAND(chspec);
+				sta_chspec = wl_cfg80211_get_sta_chanspec(cfg);
+				if (sta_chspec && wf_chspec_valid(sta_chspec)) {
+					/* 5G cant be upgraded to 6G since dual band clients
+					 * wont be able able to scan 6G
+					 */
+					if (CHSPEC_IS6G(sta_chspec) &&
+						(incoming_band == WLC_BAND_5G)) {
+						WL_ERR(("DUAL AP not allowed for"
+							" 5G band as sta in 6G chspec"
+							" 0x%x\n",
+							chspec));
+						return -ENOTSUPP;
+					}
+					if (incoming_band ==
+						CHSPEC_TO_WLC_BAND(sta_chspec)) {
+						/* use sta chanspec for SCC */
+						chspec = sta_chspec;
+					}
+				}
+			}
+
+			sta_chanspec = wl_cfg80211_get_sta_chanspec(cfg);
+			if (chan->band == wl_get_nl80211_band(CHSPEC_BAND(sta_chanspec))) {
 			chspec = (
 #ifdef WL_6G_BAND
 				(CHSPEC_IS6G(sta_chanspec) && (!CHSPEC_IS_6G_PSC(sta_chanspec) ||
@@ -1883,28 +1948,48 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 				FALSE) ||
 #endif /* APSTA_RESTRICTED_CHANNEL */
 				FALSE)) ? DEFAULT_2G_SOFTAP_CHANSPEC : sta_chanspec;
-			WL_ERR(("target chanspec will be changed to %x\n", chspec));
-			if (CHSPEC_IS2G(chspec)) {
-				bw = WL_CHANSPEC_BW_20;
-				goto set_channel;
-			}
-#ifdef WL_UNII4_CHAN
-			if (IS_5G_UNII4_165_CHANNEL(chspec)) {
-#ifndef WL_UNII4_CHAN_SCC
-				/* 165/20 SCC is allowed only if STA connnection is 165/20.
-				 *  For other BW, downgrade Softap.
-				 */
-				if (!CHSPEC_IS20(sta_chanspec)) {
-					/* Downgrade to 2g def */
-					chspec = DEFAULT_2G_SOFTAP_CHANSPEC;
-					WL_INFORM_MEM(("target chspec updated: 0x%x\n", chspec));
+				WL_ERR(("target chanspec will be changed to %x\n", chspec));
+				if (CHSPEC_IS2G(chspec)) {
+					bw = WL_CHANSPEC_BW_20;
+					goto set_channel;
 				}
+				if (ap_oper_data.count == 1) {
+					chanspec_t ch = ap_oper_data.iface[0].chspec;
+					u16 ap_band, incoming_band;
+
+					/* Single AP case. Bring up the AP in the other band */
+					ap_band = CHSPEC_TO_WLC_BAND(ch);
+					incoming_band = CHSPEC_TO_WLC_BAND(chspec);
+					WL_INFORM_MEM((
+						"AP operational in band:%d and incoming band:%d\n",
+						ap_band, incoming_band));
+					/* if incoming and operational AP band is same,
+					 * it is invalid case
+					 */
+					if (ap_band == incoming_band) {
+						WL_ERR(("DUAL AP not allowed on same band\n"));
+						return -ENOTSUPP;
+					}
+				}
+#ifdef WL_UNII4_CHAN
+				if (IS_5G_UNII4_165_CHANNEL(chspec)) {
+#ifndef WL_UNII4_CHAN_SCC
+					/* 165/20 SCC is allowed only if STA connnection is 165/20.
+					 *  For other BW, downgrade Softap.
+					 */
+					if (!CHSPEC_IS20(sta_chanspec)) {
+						/* Downgrade to 2g def */
+						chspec = DEFAULT_2G_SOFTAP_CHANSPEC;
+						WL_INFORM_MEM((
+							"target chspec updated: 0x%x\n", chspec));
+					}
 #else
-				/* Handle 165 channel as special case, keep it to 20MHz */
-				bw = WL_CHANSPEC_BW_20;
+					/* Handle 165 channel as special case, keep it to 20MHz */
+					bw = WL_CHANSPEC_BW_20;
 #endif /* !WL_UNII4_CHAN_SCC */
-			}
+				}
 #endif /* WL_UNII4_CHAN */
+			}
 		}
 	}
 
@@ -3398,10 +3483,6 @@ wl_cfg80211_bcn_bringup_ap(
 	s32 err = BCME_OK;
 	s32 is_rsdb_supported = BCME_ERROR;
 	u8 buf[WLC_IOCTL_SMLEN] = {0};
-#ifdef WL_MLO
-	struct net_info *mld_netinfo = NULL;
-	u8 ml_count = 0;
-#endif /* WL_MLO */
 
 #if defined (BCMDONGLEHOST)
 	is_rsdb_supported = DHD_OPMODE_SUPPORTED(cfg->pub, DHD_FLAG_RSDB_MODE);
@@ -3576,7 +3657,7 @@ wl_cfg80211_bcn_bringup_ap(
 		}
 
 #ifdef BCN_PROT_AP
-		err = wl_cfgvif_set_bcnprot_mode(dev, cfg);
+		err = wl_cfgvif_set_bcnprot_mode(dev, cfg, bssidx);
 		if (err < 0) {
 			WL_ERR(("Beacon protection Setting failed. ret = %d \n", err));
 			/* If fw doesn't support beacon protection, Ignore the error */
@@ -3600,18 +3681,6 @@ wl_cfg80211_bcn_bringup_ap(
 		if (cfg->mlo.ap.config_in_progress == FALSE)
 #endif /* WL_MLO && WL_MLO_AP */
 		{
-#ifdef WL_MLO
-			/* MLO setting for single link before start of SoftAP */
-			mld_netinfo = wl_cfg80211_get_mld_netinfo_by_cfg(cfg, &ml_count);
-			if (ml_count > 1) {
-				WL_ERR(("multi ML connections. AP/GO can't be supported\n"));
-				goto exit;
-			}
-
-			if (mld_netinfo && (mld_netinfo->mlinfo.num_links > 1)) {
-				wl_mlo_set_multilink(cfg, dev, FALSE);
-			}
-#endif
 			bzero(&join_params, sizeof(join_params));
 			/* join parameters starts with ssid */
 			join_params_size = sizeof(join_params.ssid);
@@ -4553,10 +4622,6 @@ wl_cfg80211_stop_ap(
 #endif /* DHD_PCIE_RUNTIMEPM */
 #endif /* CUSTOMER_HW4 */
 	u8 null_mac[ETH_ALEN];
-#ifdef WL_MLO
-	struct net_info *mld_netinfo = NULL;
-	u8 ml_count = 0;
-#endif /* WL_MLO */
 
 	WL_DBG(("Enter \n"));
 
@@ -4626,14 +4691,6 @@ wl_cfg80211_stop_ap(
 	if ((err = wl_cfg80211_bss_up(cfg, dev, bssidx, 0)) < 0) {
 		WL_ERR(("bss down error %d\n", err));
 	}
-
-#ifdef WL_MLO
-	/* MLO setting for max supported MLO links */
-	mld_netinfo = wl_cfg80211_get_mld_netinfo_by_cfg(cfg, &ml_count);
-	if (mld_netinfo && ml_count) {
-		wl_mlo_set_multilink(cfg, mld_netinfo->ndev, TRUE);
-	}
-#endif /* WL_MLO */
 
 #if defined(WL_MLO) && defined(WL_MLO_AP)
 	if (cfg->mlo.supported && mlo_ap_enable) {
@@ -6436,6 +6493,7 @@ const wl_event_msg_t *e, void *data)
 	struct net_device *ndev = NULL;
 	struct ether_addr bssid;
 	uint8 link_id = 0;
+	s32 ret = 0;
 #ifdef WL_MLO
 	wl_mlo_link_t *linkinfo = NULL;
 #endif /* WL_MLO */
@@ -6481,6 +6539,28 @@ const wl_event_msg_t *e, void *data)
 				WL_ERR(("CSA on %s. Not associated.\n", ndev->name));
 				return BCME_ERROR;
 			}
+
+#ifdef WL_MLO
+			if (linkinfo) {
+				/* ML connection */
+				ret = wl_cfg80211_get_mlo_link_status(cfg, ndev);
+				if (ret) {
+					WL_ERR(("ml status fetch failed\n"));
+				}
+			} else
+#endif /* WL_MLO */
+			{
+				/* update cached channel info for non-ml */
+				wl_update_prof(cfg, ndev, NULL, &chanspec, WL_PROF_CHAN);
+			}
+
+#ifdef WL_DYNAMIC_CHAN_POLICY
+			if (IS_STA_IFACE(ndev_to_wdev(ndev))) {
+				/* Update chan list dynamically based on STA CSA */
+				wl_cfgscan_update_dynamic_channels(cfg, ndev, TRUE);
+			}
+#endif /* WL_DYNAMIC_CHAN_POLICY */
+
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0))
 			wl_cfg80211_ch_switch_notify(ndev, chanspec, bcmcfg_to_wiphy(cfg),
 				link_id);
@@ -8267,55 +8347,128 @@ wl_cfgvif_scb_authorized(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 }
 #endif /* WL_IDAUTH */
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0)) || defined(WL_MLO_BKPORT)
+s32 wl_cfgvif_get_channel(struct wiphy *wiphy,
+	struct wireless_dev *wdev, u32 link_id, struct cfg80211_chan_def *chandef)
+#else
+s32 wl_cfgvif_get_channel(struct wiphy *wiphy,
+	struct wireless_dev *wdev, struct cfg80211_chan_def *chandef)
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0)) || defined(WL_MLO_BKPORT) */
+{
+	int err = BCME_OK;
+	int cur_chansp = 0;
+	chanspec_t cur_chanspec;
+	struct net_device *primary_ndev = NULL;
+	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
+	struct net_info *netinfo = NULL;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0)) || defined(WL_MLO_BKPORT)
+	wl_mlo_link_t *linkinfo = NULL;
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0)) || defined(WL_MLO_BKPORT) */
+
+	if (!wdev || !chandef) {
+		WL_ERR(("wrong input\n"));
+		err = -EINVAL;
+		goto exit;
+	}
+
+	primary_ndev = bcmcfg_to_prmry_ndev(cfg);
+	if (unlikely(!wl_get_drv_status(cfg, READY, primary_ndev))) {
+		WL_ERR(("device is not ready\n"));
+		err = -EINVAL;
+		goto exit;
+	}
+
+	if (!wdev->netdev) {
+		WL_DBG(("get channel not supported for non-ndev Ifaces\n"));
+		err = -EINVAL;
+		goto exit;
+	}
+
+	netinfo = wl_get_netinfo_by_wdev(cfg, wdev);
+	if (!netinfo) {
+		err = -EINVAL;
+		WL_ERR(("netinfo not found\n"));
+		goto exit;
+	}
+
+	if ((netinfo->iftype == WL_IF_TYPE_NAN_NMI) || (netinfo->iftype == WL_IF_TYPE_NAN)) {
+		WL_ERR(("get channel not supported for non-iflist Iface\n"));
+		err = -EINVAL;
+		goto exit;
+	}
+
+	WL_INFORM(("get_channel for I/F (%s) iftype %d\n", wdev->netdev->name, netinfo->iftype));
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0)) || defined(WL_MLO_BKPORT)
+	if (netinfo->mlinfo.num_links) {
+		linkinfo = wl_cfg80211_get_ml_link_by_linkid(cfg, netinfo, link_id);
+		if (linkinfo && linkinfo->chspec) {
+			cur_chansp = linkinfo->chspec;
+			WL_INFORM_MEM(("get_channel for ml link_id:%d chspec:%x\n",
+				link_id, cur_chansp));
+		} else {
+			WL_ERR(("ml linkinfo not found for linkid:%d\n", link_id));
+			err = -EINVAL;
+			goto exit;
+		}
+	} else
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0)) || defined(WL_MLO_BKPORT) */
+	{
+		err = wldev_iovar_getint(wdev->netdev, "chanspec", (s32 *)&cur_chansp);
+		if (err != BCME_OK) {
+			WL_ERR(("chanspec error (%d) \n", err));
+			err = -EINVAL;
+			goto exit;
+		}
+		WL_INFORM_MEM(("get_channel for non_ml. chspec:%x\n", cur_chansp));
+	}
+
+	cur_chanspec = wl_chspec_driver_to_host(cur_chansp);
+	if (!wf_chspec_valid(cur_chanspec)) {
+		WL_ERR(("Invalid chanspec : %x\n", cur_chanspec));
+		err = -EINVAL;
+		goto exit;
+	}
+
+	if (wl_chspec_chandef(cur_chanspec, chandef, wiphy)) {
+		WL_ERR(("chspec_chandef failed\n"));
+		err = -EINVAL;
+	}
+
+	if (!err) {
+		WL_INFORM(("freq:%d width:%d returned\n", chandef->center_freq1, chandef->width));
+	}
+exit:
+	return err;
+}
 
 #ifdef BCN_PROT_AP
 s32
-wl_cfgvif_set_bcnprot_mode(struct net_device *dev, struct bcm_cfg80211 *cfg)
+wl_cfgvif_set_bcnprot_mode(struct net_device *dev, struct bcm_cfg80211 *cfg, s32 bssidx)
 {
 	uint16 bcnprot_enab = 0;
 	u8 ioctl_buf[WLC_IOCTL_SMLEN] = {0};
 	bcm_iov_buf_t *iov_buf = (bcm_iov_buf_t *)ioctl_buf;
-	u8 resp_buf[WLC_IOCTL_SMLEN] = {0};
-	bcm_iov_buf_t *iov_resp = (bcm_iov_buf_t *)resp_buf;
-	bcm_iov_buf_t *p_resp = NULL;
 	uint8 *data = NULL;
 	uint16 iovlen = 0;
 	s32 err = BCME_OK;
-	int len = 0;
+
+	WL_INFORM_MEM(("Beacon protection Set: 0x%x \n", cfg->bcnprot_ap));
 
 	iov_buf->version = WL_BCN_PROT_VERSION_1;
 	iov_buf->id = WL_BCN_PROT_CMD_ENABLE;
-	len = OFFSETOF(bcm_iov_buf_t, data) + sizeof(uint16);
+	data = (uint8 *)&iov_buf->data[0];
+	bcnprot_enab = cfg->bcnprot_ap ? 0x1u : 0;
+	*(uint16 *)data = bcnprot_enab;
 
-	err = wldev_iovar_getbuf(dev, "bcnprot", iov_buf, len,
-			iov_resp, WLC_IOCTL_SMLEN, NULL);
-	if (err < 0) {
-		WL_ERR(("Beacon Protection Get failed, ret = %d \n", err));
-	} else {
-		p_resp = (bcm_iov_buf_t *)iov_resp;
-		bcnprot_enab =  *((uint16 *)p_resp->data);
-
-		WL_DBG(("Beacon protection Get: 0x%x \n", bcnprot_enab));
-		if (cfg->bcnprot_ap) {
-			bcnprot_enab = WL_BCN_PROT_ENABLE_FEATURE | WL_BCN_PROT_ENABLE_AP;
-		} else {
-			bcnprot_enab &= ~WL_BCN_PROT_ENABLE_AP;
-		}
-		WL_INFORM_MEM(("Beacon protection Set: 0x%x\n", bcnprot_enab));
-
-		iov_buf->version = WL_BCN_PROT_VERSION_1;
-		iov_buf->id = WL_BCN_PROT_CMD_ENABLE;
-		data = (uint8 *)&iov_buf->data[0];
-		*(uint16 *)data = bcnprot_enab;
-
-		iov_buf->len = sizeof(bcnprot_enab);
-		iovlen = sizeof(bcm_iov_buf_t) + iov_buf->len;
-		err = wldev_iovar_setbuf(dev, "bcnprot", iov_buf, iovlen,
-				iov_resp, WLC_IOCTL_SMLEN, NULL);
-		if (err) {
-			WL_ERR(("Beacon Protection Set failed, ret = %d \n", err));
-		}
+	iov_buf->len = sizeof(bcnprot_enab);
+	iovlen = sizeof(bcm_iov_buf_t) + iov_buf->len;
+	err = wldev_iovar_setbuf_bsscfg(dev, "bcnprot", iov_buf, iovlen,
+		cfg->ioctl_buf, WLC_IOCTL_SMLEN, bssidx, &cfg->ioctl_buf_sync);
+	if (err) {
+		WL_ERR(("Beacon Protection Set failed, ret = %d \n", err));
 	}
+
 	return err;
 }
 #endif /* BCN_PROT_AP */

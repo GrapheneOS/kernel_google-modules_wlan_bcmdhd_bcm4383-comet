@@ -1512,8 +1512,6 @@ typedef struct {
 	uint32 val[BCM_FLEX_ARRAY];  /**< out: values that were read out of registers or memory */
 } dump_dongle_out_t;
 
-extern uint32 sqrt_int(uint32 value);
-
 extern uint8 bcm_get_ceil_pow_2(uint val);
 
 #ifdef BCMDRIVER

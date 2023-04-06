@@ -2090,8 +2090,8 @@ typedef struct dot11_mscs_subelement dot11_mscs_subelement_t;
 #define DOT11_SCS_REQ_TYPE_REMOVE	1u
 #define DOT11_SCS_REQ_TYPE_CHANGE	2u
 
-/* 9.4.2.316 QoS Characteristics element in Draft P802.11be_D2.2
- * Figure 9-1002as Control Info field in Draft P802.11be_D2.2
+/* 9.4.2.316 QoS Characteristics element in Draft P802.11be_D3.0
+ * Figure 9-1002as Control Info field in Draft P802.11be_D3.0
  */
 #define DOT11_QOS_CHAR_DATA_RATE_LEN	3u
 #define DOT11_QOS_CHAR_DELAY_BOUND_LEN	3u
@@ -2123,11 +2123,15 @@ BWL_PRE_PACKED_STRUCT struct dot11_qos_char_ie {
 	/* optional Mean Data Rate */
 	/* optional Burst Size */
 	/* optional MSDU Lifetime */
-	/* optional MSDU Delivery Ratio */
-	/* optional MSDU Count Exponent */
+	/* optional MSDU Delivery Info */
 	/* optional Medium Time */
 } BWL_POST_PACKED_STRUCT;
 typedef struct dot11_qos_char_ie dot11_qos_char_ie_t;
+#define DOT11_SCS_QOS_CHAR_IE_LEN	19u	/* Fixed length, exludes id and len */
+#define DOT11_SCS_QOS_CHAR_IE_HDR_LEN	21u	/* Entire dot11_qos_char_ie header
+						 * length (fixed fields)
+						 */
+
 
 /** SCS Descriptor element */
 BWL_PRE_PACKED_STRUCT struct dot11_scs_descr_ie {

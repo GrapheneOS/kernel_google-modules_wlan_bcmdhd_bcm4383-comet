@@ -239,7 +239,8 @@ typedef int bcmerror_t;
 
 /* FTM error codes [-1024, -2047] */
 enum {
-	WL_FTM_E_LAST			= -1091,
+	WL_FTM_E_LAST			= -1092,
+	WL_FTM_E_PHY_CSI_FATAL_ERR	= -1092,
 	WL_FTM_E_FORCE_DELETED		= -1091,
 	WL_FTM_E_ONE_WAY_RTT		= -1090,
 	WL_FTM_E_PRIMARY_CLONE_START	= -1089,

@@ -1885,17 +1885,15 @@ wl_cfgvendor_stop_hal(struct wiphy *wiphy,
 }
 #endif /* WL_CFG80211 */
 
-#ifdef WL_DYNAMIC_INDOOR_POLICY
-#define ENABLE_INDOOR_CHANNEL 0x0001
-#define ENABLE_DFS_CHANNEL    0x0002
+#ifdef WL_DYNAMIC_CHAN_POLICY
 static int
 wl_cfgvendor_set_channel_policy(struct wiphy *wiphy,
 		struct wireless_dev *wdev, const void *data, int len)
 {
 	int err = BCME_OK, rem, type;
 	u32 channel_policy;
+	u32 wl_chan_policy = 0;
 	const struct nlattr *iter;
-	bool enable;
 	struct bcm_cfg80211 *cfg = wl_get_cfg(wdev->netdev);
 
 	nla_for_each_attr(iter, data, len, rem) {
@@ -1903,14 +1901,40 @@ wl_cfgvendor_set_channel_policy(struct wiphy *wiphy,
 		switch (type) {
 			case ANDR_WIFI_ATTRIBUTE_CHAN_POLICY:
 				channel_policy = nla_get_u32(iter);
-				enable = (channel_policy & ENABLE_INDOOR_CHANNEL) ? TRUE : FALSE;
+				WL_INFORM_MEM(("channel policy:%x\n", channel_policy));
+				if (channel_policy & ~DYN_CHAN_POLICY_MASK) {
+					WL_ERR(("unsupported policy:%x\n", channel_policy));
+					return -EINVAL;
+				}
+
+				if (channel_policy & DYN_CHAN_POLICY_INDOOR) {
+#ifdef WL_DYNAMIC_CHAN_POLICY_INDOOR
+					/* convert to fw val */
+					wl_chan_policy |= WL_CHAN_CC_INDOOR_EXT;
+#else
+					WL_ERR(("Indoor policy not supported.\n"));
+					return -EINVAL;
+#endif /* WL_DYNAMIC_CHAN_POLICY_INDOOR */
+				}
+
+				if (channel_policy & DYN_CHAN_POLICY_DFS) {
+#ifdef WL_DYNAMIC_CHAN_POLICY_DFS
+					/* convert to fw val */
+					wl_chan_policy |= WL_CHAN_CC_DFS_EXT;
+#else
+					WL_ERR(("DFS policy not supported. clearing\n"));
+					return -EINVAL;
+#endif /* WL_DYNAMIC_CHAN_POLICY_INDOOR */
+				}
+
 				err = wldev_iovar_setint(wdev->netdev,
-						"chan_concurrency_policy", enable);
+						"chan_concurrency_policy", wl_chan_policy);
 				if (unlikely(err)) {
 					WL_INFORM(("indoor channel policy failed (%d)\n", err));
 				} else {
-					WL_INFORM(("indoor chan policy configured (%d)\n", enable));
-					cfg->dyn_indoor_policy = enable;
+					WL_INFORM(("indoor chan policy configured (0x%x)\n",
+							channel_policy));
+					cfg->dyn_chan_policy = channel_policy;
 				}
 				break;
 			default:
@@ -1921,7 +1945,7 @@ wl_cfgvendor_set_channel_policy(struct wiphy *wiphy,
 
 	return err;
 }
-#endif /* WL_DYNAMIC_INDOOR_POLICY */
+#endif /* WL_DYNAMIC_CHAN_POLICY */
 
 #ifdef WL_LATENCY_MODE
 static int
@@ -14909,7 +14933,7 @@ static struct wiphy_vendor_command wl_vendor_cmds [] = {
 		.maxattr = ANDR_WIFI_ATTRIBUTE_CACHED_SCAN_MAX
 #endif /* LINUX_VERSION >= 5.3 */
 	},
-#ifdef WL_DYNAMIC_INDOOR_POLICY
+#ifdef WL_DYNAMIC_CHAN_POLICY
 	{
 		{
 			.vendor_id = OUI_GOOGLE,
@@ -14922,7 +14946,7 @@ static struct wiphy_vendor_command wl_vendor_cmds [] = {
 		.maxattr = ANDR_WIFI_ATTRIBUTE_MAX
 #endif /* LINUX_VERSION >= 5.3 */
 	},
-#endif /* WL_DYNAMIC_INDOOR_POLICY */
+#endif /* WL_DYNAMIC_CHAN_POLICY */
 };
 
 static const struct  nl80211_vendor_cmd_info wl_vendor_events [] = {
@@ -15532,4 +15556,25 @@ wl_cfgvendor_custom_advlog_btm_query(void *plog, uint32 armcycle)
 	SUPP_ADVLOG(("[BTM] QUERY token=%d reason=%d [%d]\n",
 		log->token, log->reason, armcycle));
 }
+
+void
+wl_cfgvendor_custom_advlog_disconn(struct bcm_cfg80211 *cfg, wl_assoc_status_t *as)
+{
+	int err = 0;
+	scb_val_t scbval;
+
+	bzero(&scbval, sizeof(scb_val_t));
+	err = wldev_get_rssi(bcmcfg_to_prmry_ndev(cfg), &scbval);
+	if (unlikely(err)) {
+		WL_ERR(("get_rssi error (%d)\n", err));
+		scbval.val = 0;
+	}
+	/* Beacon loss link down */
+	/* do not print to the kernel, only for framework (MACDBG_FULL) */
+	SUPP_ADVLOG(("[CONN] DISCONN bssid=" MACDBG_FULL " rssi=%d reason=0\n",
+		MAC2STRDBG_FULL((const u8*)(&as->addr)), scbval.val));
+
+	return;
+}
+
 #endif /* WL_CFGVENDOR_CUST_ADVLOG */

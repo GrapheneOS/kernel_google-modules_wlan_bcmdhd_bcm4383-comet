@@ -860,6 +860,16 @@ BWL_PRE_PACKED_STRUCT struct dot11_ngbr_bss_term_dur_se {
 typedef struct dot11_ngbr_bss_term_dur_se dot11_ngbr_bss_term_dur_se_t;
 #define DOT11_NGBR_BSS_TERM_DUR_SE_LEN	10
 
+/* 11BE Draft version2.2 */
+/** Neighbor Report, MultiLink subelement */
+BWL_PRE_PACKED_STRUCT struct dot11_ngbr_multi_link_se {
+	uint8 sub_id;
+	uint8 len;
+	uint16	ml_ctrl;		/* Multi-Link Control */
+	uint8	cmn_info[];
+} BWL_POST_PACKED_STRUCT;
+typedef struct dot11_ngbr_multi_link_se dot11_ngbr_multi_link_se_t;
+
 /* Neighbor Report BSSID Information Field */
 #define DOT11_NGBR_BI_REACHABILTY_UNKN	0x0002
 #define DOT11_NGBR_BI_REACHABILTY	0x0003
