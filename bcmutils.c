@@ -1,7 +1,7 @@
 /*
  * Driver O/S-independent utility routines
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -605,7 +605,7 @@ BCMPOSTTRAPFN(pktcopy)(osl_t *osh, void *p, uint offset, uint len, uchar *buf)
 	/* copy the data */
 	for (; p && len; p = PKTNEXT(osh, p)) {
 		n = MIN(PKTLEN(osh, p) - offset, len);
-		bcopy(PKTDATA(osh, p) + offset, buf, n);
+		(void)memcpy_s(buf, n, PKTDATA(osh, p) + offset, n);
 		buf += n;
 		len -= n;
 		ret += n;
@@ -635,7 +635,7 @@ pktfrombuf(osl_t *osh, void *p, uint offset, uint len, uchar *buf)
 	/* copy the data */
 	for (; p && len; p = PKTNEXT(osh, p)) {
 		n = MIN(PKTLEN(osh, p) - offset, len);
-		bcopy(buf, PKTDATA(osh, p) + offset, n);
+		(void)memcpy_s(PKTDATA(osh, p) + offset, n, buf, n);
 		buf += n;
 		len -= n;
 		ret += n;
@@ -715,6 +715,123 @@ bcm_mdelay(uint ms)
 	for (i = 0; i < ms; i++) {
 		OSL_DELAY(1000);
 	}
+}
+
+/* State machine logger info (per module) */
+struct bcm_sm_log_info {
+	uint32 idx;		/* Index into the circular buffer of entires */
+	uint32 flags;		/* State machine logger flags */
+	uint32 num_entries;	/* Number of entries */
+	uint32 module_entry_sz;	/* Size of each module specific entry in bytes */
+	/* Note: The following elements are not grouped into a structure to avoid memory
+	 * waste that can cause by padding.
+	 * TODO: any issue with packing?
+	 */
+	uint8 *state;		/* Logger data: State number */
+	uint8 *event;		/* Logger data: State number */
+	void **call_site;	/* Logger data: Caller address */
+	uint32 *time_stamp;	/* Logger data: Caller address */
+	void *data;		/* Logger data: Module specific data */
+};
+
+/**
+ * @brief Initialization of a logger instance. A module who wants to use the bcm state machine
+ * logger infra has to instantiate a logger before starting the logging.
+ *
+ * @param[in] osh		OS handler
+ * @param[in] flags		State machine logger flags
+ * @param[in] num_enries	Max number of entries to hold in the logger instance
+ * @param[in] module_entry_sz	Size (in bytes) of each module specific entry
+ *
+ * @return Returns the pointer to logger instance
+ */
+void *
+bcm_sm_logger_init(osl_t *osh, uint32 flags, uint32 num_entries, uint32 module_entry_sz)
+{
+	bcm_sm_log_info_t *bsli;
+
+	bsli = MALLOCZ(osh, sizeof(*bsli));
+	if (bsli) {
+		bsli->flags = flags;
+		bsli->num_entries = num_entries;
+		bsli->module_entry_sz = module_entry_sz;
+
+		bsli->state = MALLOCZ(osh, (num_entries * sizeof(*bsli->state)));
+		if (!bsli->state) {
+			goto fail;
+		}
+
+		if (flags & BCM_SM_LOG_FLAG_EVENT_PRESENT) {
+			bsli->event = MALLOCZ(osh, (num_entries * sizeof(*bsli->state)));
+			if (!bsli->state) {
+				goto fail;
+			}
+		}
+
+		bsli->call_site = MALLOCZ(osh, (num_entries * sizeof(*bsli->call_site)));
+		if (!bsli->call_site) {
+			goto fail;
+		}
+
+		bsli->time_stamp = MALLOCZ(osh, (num_entries * sizeof(*bsli->time_stamp)));
+		if (!bsli->time_stamp) {
+			goto fail;
+		}
+
+		bsli->data = MALLOCZ(osh, (num_entries * module_entry_sz));
+		if (!bsli->data) {
+			goto fail;
+		}
+	}
+
+	return bsli;
+
+fail:
+	MFREE(osh, bsli, sizeof(*bsli));
+	MFREE(osh, bsli->state, (num_entries * sizeof(*bsli->state)));
+	MFREE(osh, bsli->event, (num_entries * sizeof(*bsli->event)));
+	MFREE(osh, bsli->call_site, (num_entries * sizeof(*bsli->call_site)));
+	MFREE(osh, bsli->time_stamp, (num_entries * sizeof(*bsli->time_stamp)));
+	MFREE(osh, bsli->data, (num_entries * (num_entries * module_entry_sz)));
+
+	return NULL;
+}
+
+/**
+ * @brief Logs the state info in a given logger instance.
+ *
+ * @param[in] bcmli	 Pointer to logger instance
+ * @param[in] state      State number (supports upto 255)
+ * @param[in] event      Event number (supports upto 255)
+ * @param[in] call_site  Caller address
+ *
+ * @return Returns the pointer to module specific portion of each entry
+ */
+void *
+bcm_sm_log(bcm_sm_log_info_t *bsli, uint32 state, uint32 event, void *call_site)
+{
+	uint32 idx = bsli->idx;
+	void *data;
+
+	if (state > 255u) {
+		OSL_SYS_HALT();
+	}
+
+	bsli->state[idx] = (uint8) state;
+	bsli->call_site[idx] = call_site;
+#ifdef DONGLEBUILD
+	bsli->time_stamp[idx] = OSL_SYSUPTIME();
+#endif /* DONGLEBUILD */
+
+	if (bsli->flags & BCM_SM_LOG_FLAG_EVENT_PRESENT) {
+		bsli->event[idx] = (uint8) event;
+	}
+
+	data = ((uint8 *)(bsli->data)) + (idx * bsli->module_entry_sz);
+
+	bsli->idx = (idx + 1u) % bsli->num_entries;
+
+	return data;
 }
 
 #if defined(BCMPERFSTATS) || defined(BCMTSTAMPEDLOGS)
@@ -1476,8 +1593,8 @@ _pktlist_remove(pktlist_info_t *pktlist, void *pkt)
 			pktlist->list[i].line = pktlist->list[num-1].line;
 			pktlist->list[i].file = pktlist->list[num-1].file;
 #ifdef BCMDBG_PTRACE
-			memcpy(pktlist->list[i].pkt_trace, pktlist->list[num-1].pkt_trace,
-				PKTTRACE_MAX_BYTES);
+			(void)memcpy_s(pktlist->list[i].pkt_trace, PKTTRACE_MAX_BYTES,
+				pktlist->list[num-1].pkt_trace, PKTTRACE_MAX_BYTES);
 			idx = PKTLIST_IDX(pktlist->list[i].pkt);
 			*idx = i;
 #endif /* BCMDBG_PTRACE */
@@ -1779,12 +1896,11 @@ BCMATTACHFN(bcm_mwbmap_init)(osl_t *osh, uint32 items_max)
 	/* Allocate runtime state of multiword bitmap */
 	/* Note: wd_count[] or wd_bitmap[] are not dynamically allocated */
 	size = sizeof(bcm_mwbmap_t) + (sizeof(uint32) * words);
-	mwbmap_p = (bcm_mwbmap_t *)MALLOC(osh, size);
+	mwbmap_p = (bcm_mwbmap_t *)MALLOCZ(osh, size);
 	if (mwbmap_p == (bcm_mwbmap_t *)NULL) {
 		ASSERT(0);
 		goto error1;
 	}
-	bzero(mwbmap_p, size);
 
 	/* Initialize runtime multiword bitmap state */
 	mwbmap_p->imaps = (uint16)words;
@@ -2188,7 +2304,7 @@ id16_map_init(osl_t *osh, uint16 total_ids, uint16 start_val16)
 	ASSERT((start_val16 == ID16_UNDEFINED) ||
 	       (start_val16 + total_ids) < ID16_INVALID);
 
-	id16_map = (id16_map_t *) MALLOC(osh, ID16_MAP_SZ(total_ids));
+	id16_map = (id16_map_t *) MALLOCZ(osh, ID16_MAP_SZ(total_ids));
 	if (id16_map == NULL) {
 		return NULL;
 	}
@@ -2215,7 +2331,7 @@ id16_map_init(osl_t *osh, uint16 total_ids, uint16 start_val16)
 
 #if defined(BCM_DBG) && defined(BCM_DBG_ID16)
 	if (id16_map->start != ID16_UNDEFINED) {
-		id16_map->dbg = MALLOC(osh, ID16_MAP_DBG_SZ(total_ids));
+		id16_map->dbg = MALLOCZ(osh, ID16_MAP_DBG_SZ(total_ids));
 
 		if (id16_map->dbg) {
 			id16_map_dbg_t *id16_map_dbg = (id16_map_dbg_t *)id16_map->dbg;
@@ -2717,45 +2833,6 @@ bcm_find_ie(const uint8* tlvs, uint tlvs_len, uint8 tag, uint8 oui_len,
 	return NULL;
 }
 
-/* Look for vendor-specific IE with specified OUI and optional type */
-bcm_tlv_t *
-bcm_find_vendor_ie(const  void *tlvs, uint tlvs_len, const char *voui, uint8 *type, uint type_len)
-{
-	const  bcm_tlv_t *ie;
-	uint8 ie_len;
-
-	COV_TAINTED_DATA_SINK(tlvs_len);
-	COV_NEG_SINK(tlvs_len);
-
-	ie = (const  bcm_tlv_t*)tlvs;
-
-	/* make sure we are looking at a valid IE */
-	if (ie == NULL || !bcm_valid_tlv(ie, tlvs_len)) {
-		return NULL;
-	}
-
-	/* Walk through the IEs looking for an OUI match */
-	do {
-		ie_len = ie->len;
-		if ((ie->id == DOT11_MNG_VS_ID) &&
-		    (ie_len >= (DOT11_OUI_LEN + type_len)) &&
-		    !bcmp(ie->data, voui, DOT11_OUI_LEN))
-		{
-			/* compare optional type */
-			if (type_len == 0 ||
-			    !bcmp(((const char *)ie->data) + DOT11_OUI_LEN, type, type_len)) {
-
-				COV_TAINTED_DATA_ARG(ie);
-
-				GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
-				return (bcm_tlv_t *)(ie);		/* a match */
-				GCC_DIAGNOSTIC_POP();
-			}
-		}
-	} while ((ie = bcm_next_tlv(ie, &tlvs_len)) != NULL);
-
-	return NULL;
-}
 
 #if defined(WLTINYDUMP) || defined(BCMDBG) || defined(WLMSG_INFORM) || \
 	defined(WLMSG_ASSOC) || defined(WLMSG_PRPKT) || defined(WLMSG_WSEC)
@@ -2790,6 +2867,46 @@ bcm_format_ssid(char* buf, const uchar ssid[], uint ssid_len)
 
 #endif /* BCMDRIVER || WL_UNITTEST */
 
+/* Look for vendor-specific IE with specified OUI and optional type */
+bcm_tlv_t *
+bcm_find_vendor_ie(const  void *tlvs, uint tlvs_len, const char *voui, uint8 *type, uint type_len)
+{
+	const  bcm_tlv_t *ie;
+	uint8 ie_len;
+
+	COV_TAINTED_DATA_SINK(tlvs_len);
+	COV_NEG_SINK(tlvs_len);
+
+	ie = (const  bcm_tlv_t*)tlvs;
+
+	/* make sure we are looking at a valid IE */
+	if (ie == NULL || !bcm_valid_tlv(ie, tlvs_len)) {
+		return NULL;
+	}
+
+	/* Walk through the IEs looking for an OUI match */
+	do {
+		ie_len = ie->len;
+		if ((ie->id == DOT11_MNG_VS_ID) &&
+		    (ie_len >= (DOT11_OUI_LEN + type_len)) &&
+		    !memcmp(ie->data, voui, DOT11_OUI_LEN))
+		{
+			/* compare optional type */
+			if (type_len == 0 ||
+			    !memcmp(((const char *)ie->data) + DOT11_OUI_LEN, type, type_len)) {
+
+				COV_TAINTED_DATA_ARG(ie);
+
+				GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
+				return (bcm_tlv_t *)(ie);		/* a match */
+				GCC_DIAGNOSTIC_POP();
+			}
+		}
+	} while ((ie = bcm_next_tlv(ie, &tlvs_len)) != NULL);
+
+	return NULL;
+}
+
 /* Masking few bytes of MAC address per customer in all prints/eventlogs. */
 int
 BCMRAMFN(bcm_addrmask_set)(int enable)
@@ -2808,7 +2925,7 @@ BCMRAMFN(bcm_addrmask_set)(int enable)
 	} else
 	{
 		/* No masking. All are 0xff. */
-		memcpy(privacy, &ether_bcast, sizeof(struct ether_addr));
+		eacopy(&ether_bcast, privacy);
 	}
 
 	return BCME_OK;
@@ -2844,7 +2961,7 @@ BCMRAMFN(bcm_ether_ntou64)(const struct ether_addr *ea)
 	uint64 mac;
 	struct ether_addr addr;
 
-	memcpy(&addr, ea, sizeof(struct ether_addr));
+	(void)memcpy_s(&addr, sizeof(addr), ea, sizeof(addr));
 
 #ifdef PRIVACY_MASK
 	struct ether_addr *privacy = privacy_addrmask_get();
@@ -2918,7 +3035,7 @@ bcm_ipv6_ntoa(void *ipv6, char *buf)
 	char *p = buf;
 	int i, i_max = -1, cnt = 0, cnt_max = 1;
 	uint8 *a4 = NULL;
-	memcpy((uint8 *)&tmp[0], (uint8 *)ipv6, IPV6_ADDR_LEN);
+	(void)memcpy_s(&tmp[0], IPV6_ADDR_LEN, ipv6, IPV6_ADDR_LEN);
 
 	for (i = 0; i < IPV6_ADDR_LEN/2; i++) {
 		if (a[i]) {
@@ -3826,7 +3943,7 @@ BCMPOSTTRAPFN(bcm_write_tlv)(int type, const void *data, uint datalen, uint8 *ds
 		 */
 		if (datalen > 0u) {
 
-			memcpy(dst_tlv->data, data, datalen);
+			(void)memcpy_s(dst_tlv->data, datalen, data, datalen);
 		}
 
 		/* update the output destination poitner to point past
@@ -3874,7 +3991,7 @@ bcm_write_tlv_ext(uint8 type, uint8 ext, const void *data, uint8 datalen, uint8 
 		 * pointer to output buffer
 		 */
 		if (datalen > 0) {
-			memcpy(dst_tlv->data, data, datalen);
+			(void)memcpy_s(dst_tlv->data, datalen, data, datalen);
 		}
 
 		/* update the output destination poitner to point past
@@ -3916,9 +4033,8 @@ bcm_copy_tlv(const void *src, uint8 *dst)
 
 	ASSERT(dst && src);
 	if (dst && src) {
-
-		totlen = BCM_TLV_HDR_SIZE + src_tlv->len;
-		memcpy(dst, src_tlv, totlen);
+		totlen = BCM_TLV_SIZE(src_tlv);
+		(void)memcpy_s(dst, totlen, src_tlv, totlen);
 		new_dst = dst + totlen;
 	}
 
@@ -4184,7 +4300,7 @@ testcrc32(void)
 	uint32 crc32tv[CNBUFS] =
 		{0xd2cb1faa, 0xd385c8fa, 0xf5b4f3f3, 0x55789e20, 0x00343110};
 
-	ASSERT((buf = MALLOC(CBUFSIZ*CNBUFS)) != NULL);
+	ASSERT((buf = MALLOCZ(CBUFSIZ*CNBUFS)) != NULL);
 
 	/* step through all possible alignments */
 	for (l = 0; l <= 4; l++) {
@@ -4710,7 +4826,7 @@ bcm_format_octets(const bcm_bit_desc_t *bd, uint bdsz,
 {
 	uint i;
 	char *p = buf;
-	uint slen = 0, nlen = 0;
+	uint nlen = 0;
 	uint32 bit;
 	const char* name;
 	bool more = FALSE;
@@ -4727,18 +4843,15 @@ bcm_format_octets(const bcm_bit_desc_t *bd, uint bdsz,
 		name = bd[i].name;
 		if (isset(addr, bit)) {
 			nlen = strlen(name);
-			slen += nlen;
-			/* need SPACE - for simplicity */
-			slen += 1;
-			/* need NULL as well */
-			if (len < slen + 1) {
+			if (memcpy_s(p, len - (p - buf) - 2, name, nlen)) {
 				more = TRUE;
 				break;
 			}
-			memcpy(p, name, nlen);
 			p += nlen;
+			/* need SPACE - for simplicity */
 			p[0] = ' ';
 			p += 1;
+			/* need NULL as well */
 			p[0] = '\0';
 		}
 	}
@@ -4992,7 +5105,9 @@ bcm_mkiovar(const char *name, const char *data, uint datalen, char *buf, uint bu
 
 	/* append data onto the end of the name string */
 	if (data && datalen != 0) {
-		memcpy(&buf[len], data, datalen);
+		if (memcpy_s(&buf[len], buflen - len, data, datalen)) {
+			return 0;
+		}
 		len += datalen;
 	}
 
@@ -5594,8 +5709,8 @@ ipv4_tcp_hdr_cksum(uint8 *ip, uint8 *tcp, uint16 tcp_len)
 
 	/* pseudo header cksum */
 	bzero(&tcp_ps, sizeof(tcp_ps));
-	memcpy(&tcp_ps.dst_ip, ip_hdr->dst_ip, IPV4_ADDR_LEN);
-	memcpy(&tcp_ps.src_ip, ip_hdr->src_ip, IPV4_ADDR_LEN);
+	(void)memcpy_s(&tcp_ps.dst_ip, IPV4_ADDR_LEN, ip_hdr->dst_ip, IPV4_ADDR_LEN);
+	(void)memcpy_s(&tcp_ps.src_ip, IPV4_ADDR_LEN, ip_hdr->src_ip, IPV4_ADDR_LEN);
 	tcp_ps.zero = 0;
 	tcp_ps.prot = ip_hdr->prot;
 	tcp_ps.tcp_size = hton16(tcp_len);
@@ -5630,10 +5745,10 @@ ipv6_tcp_hdr_cksum(uint8 *ipv6, uint8 *tcp, uint16 tcp_len)
 
 	/* pseudo header cksum */
 	bzero((char *)&ipv6_pseudo, sizeof(ipv6_pseudo));
-	memcpy((char *)ipv6_pseudo.saddr, (char *)ipv6_hdr->saddr.addr,
-		sizeof(ipv6_pseudo.saddr));
-	memcpy((char *)ipv6_pseudo.daddr, (char *)ipv6_hdr->daddr.addr,
-		sizeof(ipv6_pseudo.daddr));
+	(void)memcpy_s(ipv6_pseudo.saddr, sizeof(ipv6_pseudo.saddr),
+		ipv6_hdr->saddr.addr, sizeof(ipv6_pseudo.saddr));
+	(void)memcpy_s(ipv6_pseudo.daddr, sizeof(ipv6_pseudo.daddr),
+		ipv6_hdr->daddr.addr, sizeof(ipv6_pseudo.daddr));
 	ipv6_pseudo.payload_len = ipv6_hdr->payload_len;
 	ipv6_pseudo.next_hdr = ipv6_hdr->nexthdr;
 	sum = ip_cksum_partial(sum, (uint8 *)&ipv6_pseudo, sizeof(ipv6_pseudo));
@@ -5643,34 +5758,6 @@ ipv6_tcp_hdr_cksum(uint8 *ipv6, uint8 *tcp, uint16 tcp_len)
 }
 
 void *_bcmutils_dummy_fn = NULL;
-
-/* GROUP 1 --- start
- * These function under GROUP 1 are general purpose functions to do complex number
- * calculations and square root calculation.
- */
-
-uint32 sqrt_int(uint32 value)
-{
-	uint32 root = 0, shift = 0;
-
-	/* Compute integer nearest to square root of input integer value */
-	for (shift = 0; shift < 32; shift += 2) {
-		if (((0x40000000u >> shift) + root) <= value) {
-			value -= ((0x40000000u >> shift) + root);
-			root = (root >> 1) | (0x40000000u >> shift);
-		}
-		else {
-			root = root >> 1;
-		}
-	}
-
-	/* round to the nearest integer */
-	if (root < value) ++root;
-
-	return root;
-}
-
-/* GROUP 1 --- end */
 
 /* read/write field in a consecutive bits in an octet array.
  * 'addr' is the octet array's start byte address
@@ -6233,11 +6320,11 @@ BCMATTACHFN(initvars_table)(osl_t *osh, char *start, char *end, char **vars,
 
 	/* do it only when there is more than just the null string */
 	if (c > 1) {
-		char *vp = MALLOC(osh, c);
+		char *vp = MALLOCZ(osh, c);
 		ASSERT(vp != NULL);
 		if (!vp)
 			return BCME_NOMEM;
-		bcopy(start, vp, c);
+		(void)memcpy_s(vp, c, start, c);
 		*vars = vp;
 		*count = c;
 	}

@@ -1,7 +1,7 @@
 /*
  * Broadcom device-specific manifest constants.
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -107,6 +107,7 @@
 #define BCM4394_D11BE_ID	0x4439		/* 4394 802.11be dualband device */
 #define BCM4397_D11AX_ID	0x4443		/* 4397 802.11ax dualband device */
 #define BCM4398_D11AX_ID	0x4444		/* 4398 802.11ax triband device */
+#define BCM4399_D11BE_ID	0x4451		/* 4399 802.11be dualband device */
 
 /* Chip IDs */
 // Please leave this UNRELEASEDCHIP MOG wrapper in place even if there is nothing inside it
@@ -118,6 +119,7 @@
 #define BCM4394_CHIP_ID		0x4394          /* 4394 chipcommon chipid */
 #define BCM4397_CHIP_ID		0x4397          /* 4397 chipcommon chipid */
 #define BCM4398_CHIP_ID		0x4398          /* 4398 chipcommon chipid */
+#define BCM4399_CHIP_ID		0x4399          /* 4399 chipcommon chipid */
 
 /* Chip Family IDs */
 // Please leave this UNRELEASEDCHIP MOG wrapper in place even if there is nothing inside it
@@ -145,6 +147,9 @@
 
 #define BCM4397_CHIP_GRPID	BCM4397_CHIP_ID: \
 				case BCM4398_CHIP_ID
+
+#define BCM4399_CHIP(chipid)	(CHIPID(chipid) == BCM4399_CHIP_ID)
+#define BCM4399_CHIP_GRPID	BCM4399_CHIP_ID
 
 /* Package IDs */
 

@@ -2,7 +2,7 @@
  * Broadcom Dongle Host Driver (DHD),
  * Linux-specific network interface for receive(rx) path
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -773,7 +773,10 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 		skb->len = len;
 
 		/* TODO: re-look into dropped packets. */
-		DHD_DBG_PKT_MON_RX(dhdp, skb, FRAME_TYPE_ETHERNET_II);
+		DHD_DBG_PKT_MON_RX(dhdp, skb, FRAME_TYPE_ETHERNET_II, FALSE);
+		if (ntoh16(skb->protocol) == ETHER_TYPE_BRCM) {
+			DHD_LOG_ROUTE_EVENTS(dhdp->logger, skb, skb->len);
+		}
 		/* Strip header, count, deliver upward */
 		skb_pull(skb, ETH_HLEN);
 
@@ -1319,7 +1322,17 @@ dhd_rx_mon_pkt(dhd_pub_t *dhdp, host_rxbuf_cmpl_t* msg, void *pkt, int ifidx)
 				PKTDATA(dhdp->osh, pkt), PKTLEN(dhdp->osh, pkt));
 				dhd->monitor_len += PKTLEN(dhdp->osh, pkt);
 				PKTFREE(dhdp->osh, pkt, FALSE);
-				skb_put(dhd->monitor_skb, dhd->monitor_len);
+				if (dhd->monitor_len < MAX_MON_PKT_SIZE) {
+					skb_put(dhd->monitor_skb, dhd->monitor_len);
+				} else {
+					DHD_ERROR(("dhd_rx_mon_pkt: Invalid packet length %d "
+						"exceeds the max skb length %d\n",
+						dhd->monitor_len, MAX_MON_PKT_SIZE));
+					dev_kfree_skb(dhd->monitor_skb);
+					dhd->monitor_skb = NULL;
+					dhd->monitor_len = 0;
+					return;
+				}
 				dhd->monitor_skb->protocol =
 					eth_type_trans(dhd->monitor_skb, dhd->monitor_skb->dev);
 				dhd->monitor_len = 0;

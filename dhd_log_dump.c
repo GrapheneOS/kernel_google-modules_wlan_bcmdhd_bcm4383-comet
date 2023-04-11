@@ -1,7 +1,7 @@
 /*
  * log_dump - debugability support for dumping logs to file
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -695,6 +695,9 @@ dhd_get_init_dump_len(void *ndev, dhd_pub_t *dhdp, int section)
 	}
 
 	if (!dhdp)
+		return length;
+
+	if (!dhdp->ewp_dacs_fw_enable)
 		return length;
 
 	switch (section) {
@@ -1620,6 +1623,14 @@ do_dhd_log_dump(dhd_pub_t *dhdp, log_dump_type_t *type)
 	}
 #endif /* EWP_BCM_TRACE */
 
+#ifdef EWP_CX_TIMELINE
+	if (*type == DLD_BUF_TYPE_ALL && dhdp->cx_timeline_dbg_ring) {
+		dhd_log_dump_ring_to_file(dhdp, dhdp->cx_timeline_dbg_ring,
+				fp, (unsigned long *)&pos,
+				&sec_hdr, CX_TIMELINE_LOG_HDR, LOG_DUMP_SECTION_COEX_TIMELINE);
+	}
+#endif /* EWP_CX_TIMELINE */
+
 #ifdef BCMPCIE
 	len = dhd_get_ext_trap_len(NULL, dhdp);
 	if (len) {
@@ -1873,6 +1884,24 @@ dhd_log_dump_init(dhd_pub_t *dhd)
 	}
 #endif /* EWP_EVENTTS_LOG */
 
+#ifdef EWP_CX_TIMELINE
+	dhd->cx_timeline_dbg_ring_buf = VMALLOCZ(dhd->osh, LOG_DUMP_CX_TIMELINE_BUFSIZE);
+	if (!dhd->cx_timeline_dbg_ring_buf) {
+		DHD_ERROR(("%s: unable to alloc mem for cx_timeline_dbg_ring!\n",
+			__FUNCTION__));
+		goto fail;
+	}
+	dhd->cx_timeline_dbg_ring = dhd_dbg_ring_alloc_init(dhd,
+			CX_TIMELINE_RING_ID, CX_TIMELINE_RING_NAME,
+			LOG_DUMP_CX_TIMELINE_BUFSIZE,
+			dhd->cx_timeline_dbg_ring_buf, TRUE);
+	if (!dhd->cx_timeline_dbg_ring) {
+		DHD_ERROR(("%s: unable to init cx_timeline_dbg_ring !\n",
+			__FUNCTION__));
+		goto fail;
+	}
+#endif /* EWP_CX_TIMELINE */
+
 	/* Concise buffer is used as intermediate buffer for following purposes
 	* a) pull ecounters records temporarily before
 	*  writing it to file
@@ -1989,6 +2018,12 @@ fail:
 	if (dhd->eventts_buf)
 		VMFREE(dhd->osh, dhd->eventts_buf, LOG_DUMP_EVENTTS_BUFSIZE);
 #endif /* EWP_EVENTTS_LOG */
+
+#ifdef EWP_CX_TIMELINE
+	if (dhd->cx_timeline_dbg_ring_buf) {
+		VMFREE(dhd->osh, dhd->cx_timeline_dbg_ring_buf, LOG_DUMP_CX_TIMELINE_BUFSIZE);
+	}
+#endif /* EWP_CX_TIMELINE */
 }
 
 void
@@ -2010,6 +2045,7 @@ dhd_log_dump_deinit(dhd_pub_t *dhd)
 		VMFREE(dhd->osh, dhd->ewphw_initlog_buf, dhd->ewphw_buf_totlen);
 		dhd->ewphw_initlog_buf = NULL;
 	}
+	dhd->ewp_dacs_fw_enable = FALSE;
 #endif /* EWP_DACS */
 
 #ifdef EWP_ECNTRS_LOGGING
@@ -2042,6 +2078,15 @@ dhd_log_dump_deinit(dhd_pub_t *dhd)
 	if (dhd->eventts_buf)
 		VMFREE(dhd->osh, dhd->eventts_buf, LOG_DUMP_EVENTTS_BUFSIZE);
 #endif /* EWP_EVENTTS_LOG */
+
+#ifdef EWP_CX_TIMELINE
+	if (dhd->cx_timeline_dbg_ring) {
+		dhd_dbg_ring_dealloc_deinit(&dhd->cx_timeline_dbg_ring, dhd);
+	}
+	if (dhd->cx_timeline_dbg_ring_buf) {
+		VMFREE(dhd->osh, dhd->cx_timeline_dbg_ring_buf, LOG_DUMP_CX_TIMELINE_BUFSIZE);
+	}
+#endif /* EWP_CX_TIMELINE */
 
 	/* 'general' buffer points to start of the pre-alloc'd memory */
 	dld_buf = &g_dld_buf[DLD_BUF_TYPE_GENERAL];
@@ -2157,6 +2202,23 @@ dhd_log_dump_vendor_trigger(dhd_pub_t *dhd_pub)
 	return;
 }
 
+#ifdef DEBUGABILITY
+/* coredump triggered by host/user */
+void
+dhd_coredump_trigger(dhd_pub_t *dhdp)
+{
+	if (!dhdp) {
+		DHD_ERROR(("dhdp is NULL !\n"));
+		return;
+	}
+
+#if (defined(BCMPCIE) || defined(BCMSDIO)) && defined(DHD_FW_COREDUMP)
+	dhdp->memdump_type = DUMP_TYPE_COREDUMP_BY_USER;
+	dhd_bus_mem_dump(dhdp);
+#endif /* BCMPCIE && DHD_FW_COREDUMP */
+}
+#endif /* DEBUGABILITY */
+
 void
 dhd_log_dump_trigger(dhd_pub_t *dhdp, int subcmd)
 {
@@ -2228,10 +2290,6 @@ dhd_log_dump_trigger(dhd_pub_t *dhdp, int subcmd)
 	dhdp->memdump_type = DUMP_TYPE_BY_SYSDUMP;
 	dhd_bus_mem_dump(dhdp);
 #endif /* BCMPCIE && DHD_FW_COREDUMP */
-
-#if defined(DHD_PKT_LOGGING) && defined(DHD_DUMP_FILE_WRITE_FROM_KERNEL)
-	dhd_schedule_pktlog_dump(dhdp);
-#endif /* DHD_PKT_LOGGING && DHD_DUMP_FILE_WRITE_FROM_KERNEL */
 }
 
 

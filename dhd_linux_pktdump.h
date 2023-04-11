@@ -1,7 +1,7 @@
 /*
  * Header file for the Packet dump helper functions
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -80,11 +80,13 @@ extern void dhd_dump_mod_pkt_timer(dhd_pub_t *dhdp, uint16 rsn);
 extern void dhd_dump_pkt_init(dhd_pub_t *dhdp);
 extern void dhd_dump_pkt_deinit(dhd_pub_t *dhdp);
 extern void dhd_dump_pkt_clear(dhd_pub_t *dhdp);
+extern void dhd_dump_pktcnt_stats(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf);
 #else
 static INLINE void dhd_dump_mod_pkt_timer(dhd_pub_t *dhdp, uint16 rsn) { }
 static INLINE void dhd_dump_pkt_init(dhd_pub_t *dhdp) { }
 static INLINE void dhd_dump_pkt_deinit(dhd_pub_t *dhdp) { }
 static INLINE void dhd_dump_pkt_clear(dhd_pub_t *dhdp) { }
+static INLINE void dhd_dump_pktcnt_stats(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf) { }
 #endif /* DHD_PKTDUMP_ROAM */
 
 /* Rx packet dump */

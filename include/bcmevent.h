@@ -3,7 +3,7 @@
  *
  * Dependencies: bcmeth.h
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -319,12 +319,14 @@ typedef union bcm_event_msg_u {
 #define WLC_E_BCN_TSF			205	/* Report Beacon TSF */
 #define WLC_E_OWE_INFO                  206     /* OWE Information */
 #define WLC_E_ULMU_DISABLED_REASON_UPD	207	/* OMI ULMU disable reason code update */
-#define WLC_E_LAST			208	/* highest val + 1 for range checking */
+#define WLC_E_AMSDU_RX_WAKEUP		208	/* When amsdu deagg SM is stuck in D3 condition */
+#define WLC_E_CSI_DATA			209	/* CSI data available */
+
+
+#define WLC_E_LAST			211	/* highest val + 1 for range checking */
 
 /* define an API for getting the string name of an event */
 extern const char *bcmevent_get_name(uint event_type);
-extern void wl_event_to_host_order(wl_event_msg_t * evt);
-extern void wl_event_to_network_order(wl_event_msg_t * evt);
 
 /* validate if the event is proper and if valid copy event header to event */
 extern int is_wlc_event_frame(void *pktdata, uint pktlen, uint16 exp_usr_subtype,
@@ -338,6 +340,7 @@ void wl_event_to_network_order(wl_event_msg_t * evt);
 
 /* tlv ids for roam event */
 #define WLC_ROAM_NO_NETWORKS_TLV_ID 1
+#define WLC_ROAM_SIB_ROAM_PHASE_TLV_ID	2u	/* roam phases completed in SIB roam */
 
 /* No Networks reasons */
 #define WLC_E_REASON_NO_NETWORKS		0x0u /* value 0 means no networks found */
@@ -345,6 +348,14 @@ void wl_event_to_network_order(wl_event_msg_t * evt);
 
 /* bit mask field indicating fail reason */
 typedef uint32 wlc_roam_fail_reason_t;
+
+/* data structure in xtlv[] for id  WLC_ROAM_SIB_ROAM_PHASE_TLV_ID
+ * in wl_roam_event_t
+ */
+typedef struct sib_roam_phase {
+	uint8 num_roam_phase;	/* num of roam phases completed in SIB roam */
+	uint8 pad[3];
+} sib_roam_phase_t;
 
 typedef struct wlc_roam_event_header {
 	uint16 version;		/* version */
@@ -364,7 +375,7 @@ typedef struct wlc_roam_start_event {
 	uint16 length;		/* total length */
 	int16 rssi;		/* current bss rssi */
 	int8 pad[2];		/* padding */
-	uint8 xtlvs[];		/* optional xtlvs */
+	uint8 xtlvs[];		/* optional xtlvs (wl_roam_start_xtlv_id) */
 } wlc_roam_start_event_t;
 
 typedef struct wlc_roam_prep_event {
@@ -582,6 +593,8 @@ typedef struct wl_event_sdb_trans {
 #define WLC_E_PRUNE_AP_RESTRICT_POLICY		37u	/* Prune by AP restrict policy */
 #define WLC_E_PRUNE_SAE_PWE_PWDID		38u	/* Prune by SAE PWE/PWD ID restriction */
 #define WLC_E_PRUNE_SAE_TRANSITION_DISABLE	39u	/* Prune by  SAE transition disable */
+#define WLC_E_PRUNE_BCNPROT_DISABLED		40u	/* Prune AP due to no Beacon protection */
+#define WLC_E_PRUNE_RNR_INVALID_OPCLASS		41u	/* Prune RNR-invalid operating class */
 
 
 /* WPA failure reason codes carried in the WLC_E_PSK_SUP event */
@@ -881,14 +894,14 @@ typedef BWL_PRE_PACKED_STRUCT struct wl_sd_tlv {
 	uint8	protocol;		/* service protocol type */
 	uint8	transaction_id;		/* service transaction id */
 	uint8	status_code;		/* status code */
-	uint8	data[1];		/* response data */
+	uint8	data[];		/* response data */
 } BWL_POST_PACKED_STRUCT wl_sd_tlv_t;
 
 /* service discovery event data */
 typedef BWL_PRE_PACKED_STRUCT struct wl_event_sd {
 	uint16	channel;			/* channel */
 	uint8	count;				/* number of tlvs */
-	wl_sd_tlv_t tlv[BCM_FLEX_ARRAY];	/* service discovery TLV */
+	uint8   tlv[];	/* wl_sd_tlv_t TLV */
 } BWL_POST_PACKED_STRUCT wl_event_sd_t;
 
 /* WLC_E_PKT_FILTER event sub-classification codes */
@@ -1066,6 +1079,9 @@ typedef enum wl_nan_events {
 	WL_NAN_EVENT_PAIRING_END		= 52,	/* Pairing ended */
 	WL_NAN_EVENT_PAIRING_ESTBL		= 53,	/* Pairing Established */
 
+	WL_NAN_EVENT_OOB_AF_RXTIMEOUT		= 54,	/* OOB AF rx timeout */
+	WL_NAN_EVENT_DW_DWELL_BCN_LOST		= 55,	/* DW Dwell bcn rx fail */
+	WL_NAN_EVENT_SUSPENSION_IND		= 56,	/* Suspension Start/Stop status Indicatin */
 	/* keep WL_NAN_EVENT_INVALID as the last element */
 	WL_NAN_EVENT_INVALID				/* delimiter for max value */
 } nan_app_events_e;
@@ -1679,6 +1695,8 @@ typedef struct wl_event_dynsar {
 #define BCN_MUTE_MITI_PRB_RESP_LOW_RSSI		14u /* Beacon lost and mitigation failed due Rx
 						     * Probe response with Low RSSI.
 						     */
+#define BCN_MUTE_MITI_CSA			15u /* Mitigation end due to CSA */
+#define BCN_MUTE_MITI_SA_QUERY_FAIL		16u /* Mitigation failed due to SA query failure */
 
 /* bcn_mute_miti event data */
 #define WLC_BCN_MUTE_MITI_EVENT_DATA_VER_1	1u
@@ -1756,7 +1774,7 @@ typedef struct wl_mlo_per_link_info_v1 {
 	uint8			link_id;	/* link identifier - AP managed unique identifier */
 	uint8			link_idx;	/* link index - local link config index */
 	struct ether_addr	link_addr;	/* link specific address */
-	uint8			PAD[2];
+	chanspec_t		chanspec;	/* chanspec of link */
 } wl_mlo_per_link_info_v1_t;
 
 /* MLO link information event structure */
@@ -1765,7 +1783,7 @@ typedef struct wl_mlo_link_info_event_v1 {
 	uint16				length;		/* length of this structure */
 	uint8				opcode;		/* link opcode - wl_mlo_link_info_opcode */
 	uint8				role;		/* link role - wl_mlo_link_info_role */
-	struct ether_addr		mld_addr;	/* mld addres */
+	struct ether_addr		mld_addr;	/* mld address */
 	uint8				num_links;	/* number of operative links */
 	uint8				PAD[3];
 	wl_mlo_per_link_info_v1_t	link_info[];	/* per link information */
@@ -1800,4 +1818,29 @@ typedef struct wl_ulmu_disable_reason_upd_event_v1 {
 	uint16  ulmu_disable_reason;
 	uint8	PAD[2];
 } wl_ulmu_disable_reason_upd_event_v1_t;
+
+#define BCM_SUP_4WAY_IE_VERSION		1	/* sup_wpa_timing_t struct version */
+#define BCM_SUP_4WAY_HS_IE_TYPE		57	/* 4-way HS data ID */
+
+/* 4-way HS duration data */
+typedef struct sup_wpa_timing {
+	uint16	version;		/* structure version */
+	uint16	PAD;			/* padding for 32-bit struct alignment */
+	uint32	eapol_start_m1_dur;	/* EAPOL-Start - M1 duration, us */
+	uint32	m1_m2_dur;		/* M1-M2 duration, us */
+	uint32	m2_m3_dur;		/* M2-M3 duration, us */
+	uint32	m3_m4_dur;		/* M3-M4 duration, us */
+	uint32	total_4way_hs_dur;	/* total 4-way HS duration, us */
+} sup_wpa_timing_t;
+#include <packed_section_start.h>
+/* 4-way HS duration IE */
+typedef BWL_PRE_PACKED_STRUCT struct sup_wpa_timing_prop_ie {
+	uint8	id;		/* IE ID, 221, DOT11_MNG_VS_ID */
+	uint8	len;		/* IE length */
+	uint8	oui[3];		/* Proprietary OUI, "\x00\x90\x4C", BRCM_PROP_OUI */
+	uint8	type;		/* 57, BCM_SUP_4WAY_HS_IE_TYPE */
+	sup_wpa_timing_t data;	/* 4-way HS duration data */
+} BWL_POST_PACKED_STRUCT sup_wpa_timing_prop_ie_t;
+#include <packed_section_end.h>
+
 #endif /* _BCMEVENT_H_ */

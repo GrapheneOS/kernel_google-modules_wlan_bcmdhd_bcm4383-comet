@@ -4,7 +4,7 @@
  * Provides type definitions and function prototypes used to link the
  * DHD OS, bus, and protocol modules.
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -681,7 +681,8 @@ enum dhd_dongledump_type {
 	DUMP_TYPE_CONT_EXCESS_PM_AWAKE		= 34,
 	DUMP_TYPE_NO_DB7_ACK			= 35,
 	DUMP_TYPE_DONGLE_TRAP_DURING_WIFI_ONOFF	= 36,
-	DUMP_TYPE_ESCAN_SYNCID_MISMATCH		= 37
+	DUMP_TYPE_ESCAN_SYNCID_MISMATCH		= 37,
+	DUMP_TYPE_COREDUMP_BY_USER		= 38
 };
 
 enum dhd_hang_reason {
@@ -984,7 +985,7 @@ enum {
 #define DHD_COMMON_DUMP_PATH	"/data/log/wifi/"
 #elif defined(CUSTOMER_HW2_DEBUG)
 #define DHD_COMMON_DUMP_PATH    PLATFORM_PATH
-#elif defined(BOARD_HIKEY)
+#elif defined(BOARD_HIKEY) || defined (BOARD_STB)
 #ifndef DHD_COMMON_DUMP_PATH
 #define DHD_COMMON_DUMP_PATH	"/data/misc/wifi/"
 #endif /* !DHD_COMMON_DUMP_PATH */
@@ -1177,6 +1178,10 @@ typedef struct rx_cpl_history {
 	uint8 slice;
 	uint8 priority;
 	int8 rssi;
+	uint8 rsvd;
+	uint32 proto;
+	uint32 tuple_1;
+	uint32 tuple_2;
 } rx_cpl_history_t;
 
 typedef struct rx_cpl_lat_info {
@@ -1195,6 +1200,10 @@ typedef struct tx_cpl_history {
 	uint16 latency;
 	uint16 flowid;
 	uint8 tid;
+	uint8 rsvd[3];
+	uint32 proto;
+	uint32 tuple_1;
+	uint32 tuple_2;
 } tx_cpl_history_t;
 
 typedef struct tx_cpl_info {
@@ -1617,6 +1626,9 @@ typedef struct dhd_pub {
 	uint32 sssr_dump_mode;
 	bool collect_sssr;		/* Flag to indicate SSSR dump is required */
 	bool fis_triggered;
+	bool fis_enab_no_db7ack;	/* Enable FIS if DB7 ack is not received */
+	bool fis_enab_cto;		/* Enable FIS for CTO recovery case */
+	bool dongle_fis_enab;		/* does dongle support FIS dump */
 #endif /* DHD_SSSR_DUMP */
 #ifdef DHD_SDTC_ETB_DUMP
 	etb_addr_info_t etb_addr_info;
@@ -1731,6 +1743,8 @@ typedef struct dhd_pub {
 	uint32 ewphw_moddump_len;
 	/* total size of buffer alloc'd for ewp hw logs */
 	uint32 ewphw_buf_totlen;
+	/* flag set when EWP_DACS enabled after FW handshake */
+	bool ewp_dacs_fw_enable;
 #endif /* EWP_DACS */
 	bool ewp_etb_enabled;
 #ifdef EWP_ECNTRS_LOGGING
@@ -1746,6 +1760,10 @@ typedef struct dhd_pub {
 	void *eventts_dbg_ring;
 	uint8 *eventts_buf;
 #endif /* EWP_EVENTTS_LOG */
+#ifdef EWP_CX_TIMELINE
+	void *cx_timeline_dbg_ring;
+	uint8 *cx_timeline_dbg_ring_buf;
+#endif /* EWP_CX_TIMELINE */
 #ifdef DNGL_EVENT_SUPPORT
 	uint8 health_chk_event_data[HEALTH_CHK_BUF_SIZE];
 #endif
@@ -1763,6 +1781,9 @@ typedef struct dhd_pub {
 	timeout_info_t *timeout_info;
 	uint16 esync_id; /* used to track escans */
 	osl_atomic_t set_ssid_rcvd; /* to track if WLC_E_SET_SSID is received during join IOVAR */
+	/* to track if WLC_E_SET_SSID is received during join IOVAR with error */
+	osl_atomic_t set_ssid_err_rcvd;
+	osl_atomic_t psk_sup_rcvd; /* to track if WLC_E_PSK_SUP is received during join IOVAR */
 	bool secure_join; /* field to note that the join is secure or not */
 #endif /* REPORT_FATAL_TIMEOUTS */
 #ifdef CUSTOM_SET_ANTNPM
@@ -3060,7 +3081,7 @@ extern void dhd_vif_add(struct dhd_info *dhd, int ifidx, char * name);
 extern void dhd_vif_del(struct dhd_info *dhd, int ifidx);
 extern void dhd_event(struct dhd_info *dhd, char *evpkt, int evlen, int ifidx);
 extern void dhd_vif_sendup(struct dhd_info *dhd, int ifidx, uchar *cp, int len);
-#if defined(LINUX) || defined(linux)
+#if defined(__linux__)
 void dhd_print_if_stats(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf);
 void dhd_clear_if_stats(dhd_pub_t *dhdp);
 #else
@@ -3068,6 +3089,7 @@ static INLINE void dhd_print_if_stats(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf)
 {
 	printf("%s: NOT IMPLEMENTED\n", __FUNCTION__);
 }
+
 static INLINE void dhd_clear_if_stats(dhd_pub_t *dhdp) { return; }
 #endif
 
@@ -4211,10 +4233,25 @@ extern uint dhd_sssr_mac_xmtdata(dhd_pub_t *dhdp, uint8 core_idx);
 #define DHD_SSSR_REG_INFO_DEINIT(dhdp)		do { /* noop */ } while (0)
 #endif /* DHD_SSSR_DUMP */
 
+#ifdef DHD_SDTC_ETB_DUMP
+#define DHD_SDTC_ETB_MEMPOOL_SIZE (64 * 1024)
+extern int dhd_sdtc_etb_mempool_init(dhd_pub_t *dhd);
+extern void dhd_sdtc_etb_mempool_deinit(dhd_pub_t *dhd);
+extern void dhd_sdtc_etb_init(dhd_pub_t *dhd);
+extern void dhd_sdtc_etb_deinit(dhd_pub_t *dhd);
+extern void dhd_sdtc_etb_dump(dhd_pub_t *dhd);
+extern int dhd_sdtc_etb_hal_file_dump(void *dev, const void *user_buf, uint32 len);
+#endif /* DHD_SDTC_ETB_DUMP */
+
 #ifdef DHD_COREDUMP
 /* socram size + TLVs */
 #define WLAN_DHD_COREDUMP_SIZE (5u * 1024u * 1024u)
+#ifdef DHD_SDTC_ETB_DUMP
+#define DHD_MEMDUMP_BUFFER_SIZE \
+	(WLAN_DHD_COREDUMP_SIZE + DHD_SSSR_MEMPOOL_SIZE + DHD_SDTC_ETB_MEMPOOL_SIZE)
+#else
 #define DHD_MEMDUMP_BUFFER_SIZE (WLAN_DHD_COREDUMP_SIZE + DHD_SSSR_MEMPOOL_SIZE)
+#endif /* DHD_SDTC_ETB_DUMP */
 extern int dhd_coredump_mempool_init(dhd_pub_t *dhd);
 extern void dhd_coredump_mempool_deinit(dhd_pub_t *dhd);
 #define DHD_COREDUMP_MEMPOOL_INIT(dhdp)		dhd_coredump_mempool_init(dhdp)
@@ -4746,16 +4783,6 @@ extern int dhd_control_he_enab(dhd_pub_t * dhd, uint8 he_enab);
 extern uint8 control_he_enab;
 #endif /* DISABLE_HE_ENAB  || CUSTOM_CONTROL_HE_ENAB */
 
-#ifdef DHD_SDTC_ETB_DUMP
-
-#define DHD_SDTC_ETB_MEMPOOL_SIZE (64 * 1024)
-extern int dhd_sdtc_etb_mempool_init(dhd_pub_t *dhd);
-extern void dhd_sdtc_etb_mempool_deinit(dhd_pub_t *dhd);
-extern void dhd_sdtc_etb_init(dhd_pub_t *dhd);
-extern void dhd_sdtc_etb_deinit(dhd_pub_t *dhd);
-extern void dhd_sdtc_etb_dump(dhd_pub_t *dhd);
-extern int dhd_sdtc_etb_hal_file_dump(void *dev, const void *user_buf, uint32 len);
-#endif /* DHD_SDTC_ETB_DUMP */
 #ifdef WL_AUTO_QOS
 extern void dhd_wl_sock_qos_set_status(dhd_pub_t *dhdp, unsigned long on_off);
 #endif /* WL_AUTO_QOS */

@@ -1,7 +1,7 @@
 /*
  * Packet dump helper functions
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -410,6 +410,20 @@ dhd_dump_pkt_cnts_inc(dhd_pub_t *dhdp, bool tx, uint16 *pktfate, uint16 pkttype)
 	}
 }
 
+void
+dhd_dump_pktcnt_stats(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf)
+{
+	pkt_cnts_log_t *pktcnts = (pkt_cnts_log_t *)(dhdp->pktcnts);
+	bcm_bprintf(strbuf, "============= PACKET COUNT SUMMARY ============\n");
+	bcm_bprintf(strbuf, "- ARP PACKETS: tx_success:%d tx_fail:%d rx_cnt:%d\n",
+		pktcnts->arp_cnt.tx_cnt, pktcnts->arp_cnt.tx_err_cnt,
+		pktcnts->arp_cnt.rx_cnt);
+	bcm_bprintf(strbuf, "- DNS PACKETS: tx_success:%d tx_fail:%d rx_cnt:%d\n",
+		pktcnts->dns_cnt.tx_cnt, pktcnts->dns_cnt.tx_err_cnt,
+		pktcnts->dns_cnt.rx_cnt);
+	bcm_bprintf(strbuf, "============= END OF COUNT SUMMARY ============\n");
+}
+
 static void
 dhd_dump_pkt_timer(unsigned long data)
 {
@@ -482,6 +496,7 @@ dhd_dump_pkt_init(dhd_pub_t *dhdp)
 
 	/* init timers */
 	init_timer_compat(&pktcnts->pktcnt_timer, dhd_dump_pkt_timer, dhdp);
+	pktcnts->enabled = TRUE;
 	dhdp->pktcnts = pktcnts;
 }
 
@@ -1136,7 +1151,7 @@ dhd_check_arp(uint8 *pktdata, uint16 ether_type)
 
 bool arp_print_enabled = FALSE;
 #ifdef DHD_ARP_DUMP
-#ifdef BOARD_HIKEY
+#if defined(BOARD_HIKEY) || defined (BOARD_STB)
 /* On Hikey, due to continuous ARP prints
  * DPC not scheduled. Hence redirect to debug dump unless
  * enabled explicitly via sysfs variable.
@@ -1154,7 +1169,7 @@ bool arp_print_enabled = FALSE;
 #else
 #define DHD_PKTDUMP_ARP DHD_PKTDUMP
 #define DHD_PKTDUMP_ARP_MEM DHD_PKTDUMP_MEM
-#endif /* BOARD_HIKEY */
+#endif /* BOARD_HIKEY || BOARD_STB */
 
 #define ARP_PRINT(str) \
 	do { \

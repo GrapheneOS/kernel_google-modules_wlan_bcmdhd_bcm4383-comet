@@ -1,7 +1,7 @@
 /*
  * Misc useful os-independent macros and functions.
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -58,7 +58,7 @@ extern "C" {
  * the iteration.
  */
 
-#define FOREACH_BIT(c, mask)\
+#define FOREACH_BIT_SET_MASK(c, mask)\
 	for (c = BCM_FIRST_BIT(mask); mask != 0; \
 		 mask = BCM_CLR_FISRT_BIT(mask), c = BCM_FIRST_BIT(mask))
 
@@ -231,6 +231,13 @@ extern uint pkttotlen_no_sfhtoe_hdr(osl_t *osh, void *p, uint toe_hdr_len);
 #else
 #define pkttotlen_no_sfhtoe_hdr(osh, p, hdrlen)	pkttotlen(osh, p)
 #endif /* WLCSO */
+
+typedef struct bcm_sm_log_info bcm_sm_log_info_t;
+
+#define BCM_SM_LOG_FLAG_EVENT_PRESENT (1u << 0u)
+
+void *bcm_sm_logger_init(osl_t *osh, uint32 flags, uint32 num_entries, uint32 module_entry_sz);
+void *bcm_sm_log(bcm_sm_log_info_t *bsli, uint32 state, uint32 event, void *call_site);
 
 /* Get priority from a packet and pass it back in scb (or equiv) */
 #define	PKTPRIO_VDSCP	0x100u		/* DSCP prio found after VLAN tag */
@@ -510,7 +517,7 @@ uint16 bcmhex2bin(const uint8* hex, uint hex_len, uint8 *buf, uint buf_len);
 #define CONCAT(a, b)        CONCATENATE(a, b)
 #endif
 
-#ifndef COUNT_ARGS
+#ifdef COUNT_ARGS
 /* returns the count of argument passed to COUNT_ARGS
  * order or arguments to COUNT_ARGS_ is dummy, __VA_ARGS__, 30..0
  * a30 is returned if NARGS is 30 and a0 if NARGS is 0
@@ -519,11 +526,13 @@ uint16 bcmhex2bin(const uint8* hex, uint hex_len, uint8 *buf, uint buf_len);
  * 5 Args present, dummy, a30-a26(args passed) a25-a1==30-6, and a0 == 5
  */
 #undef __COUNT_ARGS
+#undef COUNT_ARGS
+#endif /* COUNT_ARGS */
+
 #define __COUNT_ARGS(dummy, a30, a29, a28, a27, a26, a25, a24, a23, a22, a21, a20, a19, a18, \
 	a17, a16, a15, a14, a13, a12, a11, a10, a9, a8, a7, a6, a5, a4, a3, a2, a1, a0, ...) a0
 #define COUNT_ARGS(...)  __COUNT_ARGS(dummy, ##__VA_ARGS__, 30, 29, 28, 27, 26, 25, 24, 23, 22, \
 	21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0)
-#endif
 
 #ifndef ABS
 #define	ABS(a)			(((a) < 0) ? -(a) : (a))
@@ -658,6 +667,18 @@ extern void clr_bitrange_u32(void *array, uint start, uint end, uint maxbit);
 extern int bcm_find_fsb(uint32 num);
 
 #define	isbitset(a, i)	(((a) & (1u << (i))) != 0)
+#define	isbitclr(a, i)	(((a) & (1u << (i))) == 0)
+
+#define FOREACH_BIT(a, i) \
+	for ((i) = 0; ((i) < (sizeof(a) * NBBY)); (i)++)
+
+#define FOREACH_BIT_SET(a, i) \
+	FOREACH_BIT(a, i) \
+		if (isbitset((a), (i)))
+
+#define FOREACH_BIT_CLR(a, i) \
+	FOREACH_BIT(a, i) \
+		if (isbitclr((a), (i)))
 
 #if defined DONGLEBUILD
 #define	NBITS(type)	(sizeof(type) * 8)
@@ -815,6 +836,18 @@ DECLARE_MAP_API(8, 2, 3, 3u, 0x00FFu) /* setbit8() and getbit8() */
 
 #define MACOUI "%02x:%02x:%02x"
 #define MACOUI2STR(ea) (ea)[0], (ea)[1], (ea)[2]
+
+#ifdef DONGLEBUILD
+#define PMKIDDBG		"%016llx%016llx"
+#define PMKID2STRDBG(pmkid)	(uint64)HTON64(*((const uint64*)&(pmkid)[0])), \
+				(uint64)HTON64(*((const uint64*)&(pmkid)[8]))
+#else
+#define PMKIDDBG		"%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x"
+#define PMKID2STRDBG(pmkid)	(pmkid)[ 0], (pmkid)[ 1], (pmkid)[ 2], (pmkid)[ 3], \
+				(pmkid)[ 4], (pmkid)[ 5], (pmkid)[ 6], (pmkid)[ 7], \
+				(pmkid)[ 8], (pmkid)[ 9], (pmkid)[10], (pmkid)[11], \
+				(pmkid)[12], (pmkid)[13], (pmkid)[14], (pmkid)[15]
+#endif /* DONGLEBUILD */
 
 /* bcm_format_flags() bit description structure */
 typedef struct bcm_bit_desc {
@@ -1479,8 +1512,6 @@ typedef struct {
 	uint32 val[BCM_FLEX_ARRAY];  /**< out: values that were read out of registers or memory */
 } dump_dongle_out_t;
 
-extern uint32 sqrt_int(uint32 value);
-
 extern uint8 bcm_get_ceil_pow_2(uint val);
 
 #ifdef BCMDRIVER
@@ -1617,5 +1648,7 @@ extern uint16 bcm_mwbmap_total_pktid(struct bcm_mwbmap * mwbmap_hdl);
 
 extern uint64 div_1K(uint64 q);
 extern uint64 div_1M(uint64 q);
+
+#define NS_PER_MS			(1000000u)
 
 #endif	/* _bcmutils_h_ */

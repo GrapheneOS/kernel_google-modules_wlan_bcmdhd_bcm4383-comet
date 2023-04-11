@@ -1,7 +1,7 @@
 /*
  * DHD BT WiFi Coex RegON Coordinator - Interface
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -95,6 +95,11 @@ int wbrc2wl_wlan_pcie_link_request(void *dhd_pub);
 int wbrc2wl_wlan_on_request(void *dhd_pub);
 /* WBRC2WL - download BT FW over PCIE BAR2 */
 int wbrc2wl_wlan_dwnld_bt_fw(void *dhd_pub, void *fw_blob, uint len);
+
+#if defined(BCMDHD_MODULAR)
+int wbrc_init(void);
+void wbrc_exit(void);
+#endif /* BCMDHD_MODULAR */
 
 #ifdef WBRC_TEST
 typedef struct wbrc_test_iovar {

@@ -5,7 +5,7 @@
  * JTAG, 0/1/2 UARTs, clock frequency control, a watchdog interrupt timer,
  * GPIO interface, extbus, and support for serial and parallel flashes.
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -96,6 +96,7 @@ typedef volatile struct pmuregs pmuregs_t;
 #define pmu_RetentionControl_ADDR                                                       0x670u
 #define pmu_SWScratch_ADDR                                                              0x750u
 #define pmu_FISCtrlStatus_ADDR                                                          0x7b4u
+#define pmu_FISTrigRsrcState_ADDR                                                       0x7bcu
 
 #define pmu_CoreCapabilities_ADDR                                                       0x604u
 #define pmu_RegulatorControlAddr_ADDR                                                   0x658u
@@ -195,6 +196,8 @@ typedef volatile struct chipcregs chipcregs_t;
 #define chipcommon_ClockCtlStatus_ADDR                                                  0x1e0u
 #define chipcommon_BackplaneAddrLow_ADDR                                                0xd0u
 #define chipcommon_BackplaneAddrHi_ADDR                                                 0xd4u
+#define chipcommon_BackplaneData_ADDR                                                   0xd8u
+#define chipcommon_BackplaneIndAccess_ADDR                                              0xe0u
 #define chipcommon_WatchdogCounter_ADDR                                                 0x80u
 #define chipcommon_IntMask_ADDR                                                         0x24u
 #define chipcommon_ChipControl_ADDR                                                     0x28u
@@ -2827,9 +2830,11 @@ typedef volatile struct chipcregs chipcregs_t;
 #define CR4_4383_RAM_BASE                    (0x6E0000)
 #define CR4_4387_RAM_BASE                    (0x740000)
 #define CR4_4385_RAM_BASE                    (0x740000)
+#define CA7_4385_RAM_BASE                    (0x200000)
 #define CA7_4388_RAM_BASE                    (0x200000)
 #define CA7_4389_RAM_BASE                    (0x200000)
-#define CA7_4385_RAM_BASE                    (0x200000)
+#define CA7_4390_RAM_BASE                    (0x2A0000)
+#define CA7_4399_RAM_BASE                    (0x2A0000)
 
 /* Physical memory in 4388a0 HWA is 64KB (8192 x 64 bits) even though
  * the memory space allows 192KB (0x1850_0000 - 0x1852_FFFF)

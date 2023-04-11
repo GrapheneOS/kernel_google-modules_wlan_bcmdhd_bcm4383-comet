@@ -8,7 +8,7 @@
  * BSSTRANS - BSS Management Transition
  * TIMBC - TIM Broadcast
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -104,6 +104,8 @@ typedef struct dot11_bsstrans_req dot11_bsstrans_req_t;
 #define DOT11_BSSTRANS_REQMODE_DISASSOC_IMMINENT	0x04
 #define DOT11_BSSTRANS_REQMODE_BSS_TERM_INCL		0x08
 #define DOT11_BSSTRANS_REQMODE_ESS_DISASSOC_IMNT	0x10
+/* Draft P802.11be_D2.2.pdf */
+#define DOT11_BSSTRANS_REQMODE_LINK_REMOVAL_IMNT	0x20
 
 /** BSS Management transition response frame header */
 BWL_PRE_PACKED_STRUCT struct dot11_bsstrans_resp {

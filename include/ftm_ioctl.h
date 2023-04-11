@@ -1,7 +1,7 @@
 /*
  * FTM module IOCTL structure definitions.
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -76,11 +76,6 @@ typedef uint32	wl_ftm_flags_t;
 #define WL_FTM_SESSION_FLAG_INITIATOR		0x0000000000000001llu	/* local is initiator */
 #define WL_FTM_SESSION_FLAG_TARGET		0x0000000000000002llu	/* local is target */
 #define WL_FTM_SESSION_FLAG_CORE_ROTATE		0x0000000000000004llu	/* initiator core rotate */
-#define WL_FTM_SESSION_FLAG_ONE_WAY		WL_FTM_SESSION_FLAG_CORE_ROTATE	/* ONE_WAY and CORE
-										 * ROTATE are
-										 * mutually
-										 * exclusive
-										 */
 #define WL_FTM_SESSION_FLAG_AUTO_BURST		0x0000000000000008llu	/* rx_auto_burst */
 #define WL_FTM_SESSION_FLAG_PERSIST		0x0000000000000010llu	/* good until cancelled */
 #define WL_FTM_SESSION_FLAG_RTT_DETAIL		0x0000000000000020llu	/* rtt detail results */
@@ -92,7 +87,7 @@ typedef uint32	wl_ftm_flags_t;
 #define WL_FTM_SESSION_FLAG_ASAP_CAPABLE	0x0000000000000800llu	/* ASAP-capable */
 #define WL_FTM_SESSION_FLAG_RANDMAC		0x0000000000001000llu	/* use random mac */
 #define WL_FTM_SESSION_FLAG_REPORT_FAILURE	0x0000000000002000llu	/* failure to target */
-#define WL_FTM_SESSION_FLAG_INITIATOR_RPT	0x0000000000004000llu	/* distance to target */
+#define WL_FTM_SESSION_FLAG_INITIATOR_RPT	0x0000000000004000llu	/* ISTA to RSTA report */
 #define WL_FTM_SESSION_FLAG_NOCHANSWT		0x0000000000008000llu	/* reserved in comp ? */
 #define WL_FTM_SESSION_FLAG_RSVD1		0x0000000000010000llu	/* reserved */
 #define WL_FTM_SESSION_FLAG_SEQ_EN		0x0000000000020000llu	/* Toast */
@@ -134,12 +129,11 @@ typedef uint32	wl_ftm_flags_t;
 									 * burst(s) on error.
 									 */
 #define WL_FTM_SESSION_FLAG_PASSIVE_TB_RANGING	0x0000800000000000llu	/* Passive TB ranging */
+#define WL_FTM_SESSION_FLAG_ONE_WAY		0x0001000000000000llu	/* ONE_WAY RTT */
+#define WL_FTM_SESSION_FLAG_PASSIVE_STA		0x0002000000000000llu	/* Passive STA */
+
 #define WL_FTM_SESSION_FLAG_ALL			0xffffffffffffffffllu
-
 typedef uint64 wl_ftm_session_flags_t;
-
-/* alias */
-#define WL_FTM_SESSION_FLAG_I2R_RPT WL_FTM_SESSION_FLAG_INITIATOR_RPT
 
 /* flags common across mc/ntb/tb.
  * Explicit for the ones that are currently used.
@@ -175,7 +169,8 @@ typedef uint64 wl_ftm_session_flags_t;
 	| WL_FTM_SESSION_FLAG_BURST_PERIOD_NOPREF \
 	| WL_FTM_SESSION_FLAG_SEQ_EN \
 	| WL_FTM_SESSION_FLAG_NOCHANSWT \
-	| WL_FTM_SESSION_FLAG_MBURST_FOLLOWUP)
+	| WL_FTM_SESSION_FLAG_MBURST_FOLLOWUP \
+	| WL_FTM_SESSION_FLAG_ONE_WAY)
 
 /* flags common for TB/NTB sessions */
 #define FTM_TB_NTB_COMMON_CONFIG_MASK \
@@ -195,11 +190,12 @@ typedef uint64 wl_ftm_session_flags_t;
 #define FTM_NTB_CONFIG_MASK	FTM_TB_NTB_COMMON_CONFIG_MASK
 
 /* flags relevant to TB sessions. */
-#define FTM_TB_CONFIG_MASK \
-	(FTM_TB_NTB_COMMON_CONFIG_MASK \
-	| WL_FTM_SESSION_FLAG_FULL_BW \
+#define FTM_TB_SPECIFIC_CONFIG_MASK \
+	(WL_FTM_SESSION_FLAG_FULL_BW \
 	| WL_FTM_SESSION_FLAG_DEV_CLASS_A \
-	| WL_FTM_SESSION_FLAG_PASSIVE_TB_RANGING)
+	| WL_FTM_SESSION_FLAG_PASSIVE_TB_RANGING \
+	| WL_FTM_SESSION_FLAG_PASSIVE_STA)
+#define FTM_TB_CONFIG_MASK	(FTM_TB_NTB_COMMON_CONFIG_MASK | FTM_TB_SPECIFIC_CONFIG_MASK)
 
 typedef uint64 wl_ftm_session_mask_t;
 
@@ -488,8 +484,12 @@ typedef struct wl_ftm_tb_ista_aw {
 
 /* WL_FTM_TLV_ID_CSI_DUMP */
 enum wl_ftm_csi_dump_flags {
-	CSI_DUMP_FLAG_RX_CSI_DATA	= 0x01,	/* RX CSI data */
-	CSI_DUMP_FLAG_START		= 0x80	/* start of CSI data */
+	CSI_DUMP_FLAG_NONE		= 0x00, /* None */
+	CSI_DUMP_FLAG_RX_CSI_DATA	= 0x01, /* RX CSI data */
+	CSI_DUMP_FLAG_I2R_NDP		= 0x02, /* I2R NDP CSI data */
+	CSI_DUMP_FLAG_R2I_NDP		= 0x04, /* R2I NDP CSI data */
+	CSI_DUMP_FLAG_PASSIVE_STA	= 0x08, /* dump CSI data as passive device */
+	CSI_DUMP_FLAG_START		= 0x80  /* start of CSI data */
 };
 typedef uint8 wl_ftm_csi_dump_flags_t;
 

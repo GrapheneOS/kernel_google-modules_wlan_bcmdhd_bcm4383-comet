@@ -4,7 +4,7 @@
  *
  * Definitions subject to change without notice.
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -27,7 +27,29 @@
 #define	_bcmmsgbuf_h_
 
 #include <ethernet.h>
+
+#ifndef BCMWIFI_DISSECTOR_BUILD
+/*
+ * This header file i.e bcmmsgbuf.h is needed for bcmwifi dissecotor
+ * to prase host to dongle msgbuf traffic.
+ *
+ * BCMWIFI_DISSECTOR_BUILD is defined only while building bcmwifi dissecotor(BWD).
+ * wlioctl.h and the bunch of files being invoked by wlioctl.h are not needed for
+ * BWD build as of now. When need be wlioctl.h can be invoked unconditionally.
+ *
+ */
 #include <wlioctl.h>
+#endif /* !BCMWIFI_DISSECTOR_BUILD */
+
+#ifdef BCMWIFI_DISSECTOR_BUILD
+/*
+ * This header file needs someof the definitons from osl_decl.h.
+ * Hence include the same for BCMWIFI_DISSECTOR_BUILD.
+ */
+#include <osl_decl.h>
+#define DECLSPEC_ALIGN(x)	__attribute__ ((aligned(x)))
+#endif /* BCMWIFI_DISSECTOR_BUILD */
+
 #include <bcmpcie.h>
 
 #define MSGBUF_MAX_MSG_SIZE   ETHER_MAX_LEN
@@ -1530,6 +1552,11 @@ typedef struct tx_idle_flowring_resume_response {
 #define D2H_TXSTATUS_EXT_PKT_BT_DENY	0x2000 /**< set when WLAN is given prio over BT */
 #define D2H_TXSTATUS_EXT_PKT_NAV_SWITCH	0x1000 /**< set when band switched due to NAV intr */
 #define D2H_TXSTATUS_EXT_PKT_HOF_SWITCH	0x0800 /**< set when band switched due to HOF intr */
+
+/* HP2P Extended TxStatus info for pkt expiry */
+#define D2H_TXSTATUS_EXT_PKT_EXP_WL		0x0400 /**< set when pkt expired in WL */
+#define D2H_TXSTATUS_EXT_PKT_EXP_UCODE_DQ	0x0200 /**< pkt expired in ucode before deq */
+#define D2H_TXSTATUS_EXT_PKT_EXP_UCODE		0x0100 /**< pkt expired in ucode after deq */
 
 /* H2D Txpost aggregated work item */
 #define TXBUF_AGGR_CNT	(2u)
