@@ -1,7 +1,7 @@
 /*
  * Linux OS Independent Layer
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -376,8 +376,10 @@ extern int osl_error(int bcmerror);
 #include <linux/kernel.h>       /* for vsn/printf's */
 #include <linux/string.h>       /* for mem*, str* */
 extern uint64 osl_sysuptime_us(void);
+extern uint64 osl_sysuptime_ns(void);
 #define OSL_SYSUPTIME()		((uint32)jiffies_to_msecs(jiffies))
 #define OSL_SYSUPTIME_US()	osl_sysuptime_us()
+#define OSL_SYSUPTIME_NS()	osl_sysuptime_ns()
 extern uint64 osl_localtime_ns(void);
 extern void osl_get_localtime(uint64 *sec, uint64 *usec);
 extern uint64 osl_systztime_us(void);
@@ -386,6 +388,8 @@ extern char* osl_get_rtctime(void);
 #define OSL_GET_LOCALTIME(sec, usec)	osl_get_localtime((sec), (usec))
 #define OSL_SYSTZTIME_US()	osl_systztime_us()
 #define OSL_GET_RTCTIME()	osl_get_rtctime()
+uint64 osl_getcycles(void);
+
 /* RTC format %02d:%02d:%02d.%06lu, LEN including the trailing null space */
 #define RTC_TIME_BUF_LEN	16u
 #define	printf(fmt, args...)	printk(fmt , ## args)
@@ -449,6 +453,14 @@ extern uint64 regs_addr;
 #endif /* DHD_DEBUG_REG_DUMP */
 
 extern void dhd_plat_l1_exit_io(void);
+/* dhd_plat_l1_exit_io is defined in dhd file and
+ * is not needed for NIC.
+ */
+#if !defined(NICBUILD)
+#define os_l1_exit_io	dhd_plat_l1_exit_io();
+#else /* NICBUILD */
+#define os_l1_exit_io
+#endif /* !NICBUILD */
 
 #ifndef IL_BIGENDIAN
 #ifdef CONFIG_64BIT
@@ -457,7 +469,7 @@ extern void dhd_plat_l1_exit_io(void);
 	SELECT_BUS_READ(osh, \
 		({ \
 			__typeof(*(r)) __osl_v = 0; \
-			dhd_plat_l1_exit_io(); \
+			os_l1_exit_io; \
 			BCM_REFERENCE(osh);	\
 			switch (sizeof(*(r))) { \
 				case sizeof(uint8):	__osl_v = \
@@ -497,7 +509,7 @@ extern void dhd_plat_l1_exit_io(void);
 #define NO_WIN_CHECK_W_REG(osh, r, addr, v) do { \
 	SELECT_BUS_WRITE(osh, \
 		({ \
-			dhd_plat_l1_exit_io(); \
+			os_l1_exit_io; \
 			switch (sizeof(*(r))) { \
 				case sizeof(uint8):	writeb((uint8)(v), \
 						(volatile uint8*)(addr)); break; \
@@ -809,15 +821,18 @@ extern void bzero(void *b, size_t len);
 #endif /* ! BCMDRIVER */
 
 #if defined(NIC_REG_ACCESS_LEGACY) || defined(NIC_REG_ACCESS_LEGACY_DBG)
-#if !defined(BCMPCIE)
-#error NIC_REG_ACCESS_LEGACY is only compatible with BCMPCIE
-#endif /* defined(BCMSDIO) */
+/* TODO: For now check only for NICBUILD flag. Need to find PCIE + NIC equivalent flag */
+#if !defined(NICBUILD)
+#error NIC_REG_ACCESS_LEGACY is only compatible with NICBUILD
+#endif /* defined(NICBUILD) */
 
 typedef struct osl_pcie_window {
-	void *bp_access_lock;
-	unsigned long window_offset;
-	unsigned long bp_addr;
-	volatile void *bar_addr;
+	osl_t		*osh;
+	void		*bp_access_lock_r;
+	void		*bp_access_lock_w;
+	unsigned long	window_offset;
+	unsigned long	bp_addr;
+	volatile void	*bar_addr;
 } osl_pcie_window_t;
 
 extern osl_pcie_window_t osl_reg_access_pcie_window;
@@ -829,8 +844,14 @@ extern osl_pcie_window_t osl_reg_access_pcie_window;
  * @param[in]  window_offset            Offset of the window to be managed.
  * @param[in]  bar_addr                 ioremap address of this window.
  */
-void osl_reg_access_pcie_window_init(osl_t *osh, void *bp_access_lock, unsigned long window_offset,
+void osl_reg_access_pcie_window_init(osl_t *osh, unsigned long window_offset,
 	volatile void *bar_addr);
+
+/**
+ * De-Initialize osl_reg_access_pcie_window.
+ * @param[in]  osh                      OS handle.
+ */
+void osl_reg_access_pcie_window_deinit(osl_t *osh);
 
 /**
  * Check that the osl_reg_access_pcie_window is configured to access the reg_addr and return the
@@ -840,27 +861,26 @@ void osl_reg_access_pcie_window_init(osl_t *osh, void *bp_access_lock, unsigned 
  * @return                Address of the pcie bar window that is configured to access the provided
  *                        address.
  */
-volatile void *osl_update_pcie_win(osl_t *osh, uint32 *reg_addr);
+volatile void *osl_update_pcie_win(osl_t *osh, volatile void *reg_addr);
 
 #define BAR0_WINDOW_OFFSET_MASK		0xFFFu
 #define BAR0_WINDOW_ADDRESS_MASK	~BAR0_WINDOW_OFFSET_MASK
 
 #define WIN_CHECK_R_REG(osh, r) ({ \
-	unsigned long _lock_flags_ = osl_spin_lock(osl_reg_access_pcie_window.bp_access_lock); \
-	volatile void *_bar_addr_ = osl_update_pcie_win(osh, r); \
+	unsigned long _lock_flags_r_ = osl_spin_lock(osl_reg_access_pcie_window.bp_access_lock_r); \
+	volatile void *_bar_addr_r_ = osl_update_pcie_win(osh, (volatile void *)r); \
 	typeof(*r) _retval_; \
-	_retval_ = (typeof(*r))NO_WIN_CHECK_R_REG(osh, r, _bar_addr_); \
-	osl_spin_unlock(osl_reg_access_pcie_window.bp_access_lock, _lock_flags_); \
+	_retval_ = (typeof(*r))NO_WIN_CHECK_R_REG(osh, r, _bar_addr_r_); \
+	osl_spin_unlock(osl_reg_access_pcie_window.bp_access_lock_r, _lock_flags_r_); \
 	_retval_; \
 })
 
 #define WIN_CHECK_W_REG(osh, r, v) ({ \
-	unsigned long _lock_flags_ = osl_spin_lock(osl_reg_access_pcie_window.bp_access_lock); \
-	volatile void *_bar_addr_ = osl_update_pcie_win(osh, r); \
-	NO_WIN_CHECK_W_REG(osh, r, _bar_addr_, v); \
-	osl_spin_unlock(osl_reg_access_pcie_window.bp_access_lock, _lock_flags_); \
+	unsigned long _lock_flags_w_ = osl_spin_lock(osl_reg_access_pcie_window.bp_access_lock_w); \
+	volatile void *_bar_addr_w_ = osl_update_pcie_win(osh, (volatile void *)r); \
+	NO_WIN_CHECK_W_REG(osh, r, _bar_addr_w_, v); \
+	osl_spin_unlock(osl_reg_access_pcie_window.bp_access_lock_w, _lock_flags_w_); \
 })
-
 #endif /* defined(NIC_REG_ACCESS_LEGACY) || defined(NIC_REG_ACCESS_LEGACY_DBG) */
 
 #ifdef NIC_REG_ACCESS_LEGACY

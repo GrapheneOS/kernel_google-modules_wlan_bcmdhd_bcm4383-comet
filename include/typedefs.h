@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -203,9 +203,12 @@ typedef unsigned __int64 uint64;
 #ifdef USE_TYPEDEF_DEFAULTS
 #undef USE_TYPEDEF_DEFAULTS
 
+#ifndef BCMWIFI_DISSECTOR_BUILD
+/* BWD build throws errors for two or more data types in declaration */
 #ifndef TYPEDEF_BOOL
 typedef	/* @abstract@ */ unsigned char	bool;
 #endif /* endif TYPEDEF_BOOL */
+#endif /* !BCMWIFI_DISSECTOR_BUILD */
 
 /* define uchar, ushort, uint, ulong */
 

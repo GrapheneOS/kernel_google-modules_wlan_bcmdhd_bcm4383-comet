@@ -1,7 +1,7 @@
 /*
  * Private header file for Linux OS Independent Layer
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -172,6 +172,8 @@ struct osl_info {
 	void *dhd_map_log;
 	void *dhd_unmap_log;
 #endif /* DHD_MAP_LOGGING */
+	spinlock_t bpaccess_lock_r;
+	spinlock_t bpaccess_lock_w;
 };
 
 #endif /* _LINUX_OSL_PRIV_H_ */

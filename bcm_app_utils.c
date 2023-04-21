@@ -3,7 +3,7 @@
  * Contents are wifi-specific, used by any kernel or app-level
  * software that might want wifi things as it grows.
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1155,8 +1155,8 @@ wl_cntbuf_to_xtlv_format(void *ctx, void *cntbuf, int buflen, uint32 corerev)
 	}
 
 #ifdef BCMDRIVER
-	wlccnt = MALLOC(osh, sizeof(*wlccnt));
-	macstat = MALLOC(osh, WL_CNT_MCST_STRUCT_SZ);
+	wlccnt = MALLOCZ(osh, sizeof(*wlccnt));
+	macstat = MALLOCZ(osh, WL_CNT_MCST_STRUCT_SZ);
 #else
 	wlccnt = (wl_cnt_wlc_t *)malloc(sizeof(*wlccnt));
 	macstat = (uint32 *)malloc(WL_CNT_MCST_STRUCT_SZ);

@@ -12,7 +12,7 @@
  *
  * This file is used only if the DHD is built with the feature string "dscp_policy".
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -617,6 +617,10 @@ dhd_dscp_policy_send_response(struct bcm_cfg80211 *cfg, struct net_device *dev,
 	int ret_val;
 	uint16 valid_entries = 0;
 	struct wl_security *sec;
+	unsigned long flags;
+
+	/* acquire the lock */
+	DHD_DSCP_POLICY_LOCK(policy_info->dscp_policy_lock, flags);
 
 	/* find valid policy entries */
 	for (count = 0; count < policy_info->num_entries; count++) {
@@ -628,6 +632,9 @@ dhd_dscp_policy_send_response(struct bcm_cfg80211 *cfg, struct net_device *dev,
 			valid_entries++;
 		}
 	}
+
+	/* release the lock */
+	DHD_DSCP_POLICY_UNLOCK(policy_info->dscp_policy_lock, flags);
 
 	/* Compute the total length of the Policy Response frame */
 	buf_len += (valid_entries * sizeof(dscp_policy_status_t));
@@ -673,6 +680,10 @@ dhd_dscp_policy_send_response(struct bcm_cfg80211 *cfg, struct net_device *dev,
 
 	/* populate the status list */
 	valid_entries = 0;
+
+		/* acquire the lock */
+	DHD_DSCP_POLICY_LOCK(policy_info->dscp_policy_lock, flags);
+
 	for (count = 0; count < policy_info->num_entries; count++) {
 		if ((policy_info->policy_entries[count].policy_id != 0) &&
 		    ((policy_info->policy_entries[count].proc_flags &
@@ -703,6 +714,9 @@ dhd_dscp_policy_send_response(struct bcm_cfg80211 *cfg, struct net_device *dev,
 
 	/* Reset flags, go back to normal operation accepeting the requests */
 	policy_info->policy_flags &= ~DSCP_POLICY_FLAG_QUERY_REJECT_REQUEST;
+
+	/* release the lock */
+	DHD_DSCP_POLICY_UNLOCK(policy_info->dscp_policy_lock, flags);
 
 	if (wl_dbg_level & WL_DBG_DBG) {
 		prhex("Display of DSCP response", buf, buf_len);
@@ -1126,15 +1140,14 @@ dhd_dscp_policy_send_unsolicited_resp(struct net_device *ndev, uint8 policy_id)
 		}
 	}
 
+	/* release the lock */
+	DHD_DSCP_POLICY_UNLOCK(policy_info->dscp_policy_lock, flags);
+
 	if (policy_id_found == true) {
 		/* send unsolicited DSCP response frame */
 		ret_val = dhd_dscp_policy_send_response(cfg, ndev,
 		                                        DSCP_POLICY_SC_REQUEST_DECLINED, true);
 	}
-
-	/* release the lock */
-	DHD_DSCP_POLICY_UNLOCK(policy_info->dscp_policy_lock, flags);
-
 done:
 	return ret_val;
 }

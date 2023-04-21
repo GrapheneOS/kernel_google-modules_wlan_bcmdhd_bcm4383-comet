@@ -1,5 +1,7 @@
 /*
- * Bit packing and Base64 utils for EWP
+ * EVENT_LOG API strings definitions
+ * The strings defined in this file are "API" strings and therefore can't be changed without
+ * consulting the consumers of these strings
  *
  * Copyright (C) 2023, Broadcom.
  *
@@ -21,11 +23,18 @@
  * <<Broadcom-WL-IPTag/Dual:>>
  */
 
-#ifndef __BITPACK_H_
-#define __BITPACK_H_
+#ifndef _EVENT_LOG_API_STRINGS_H_
+#define _EVENT_LOG_API_STRINGS_H_
 
-#define BYTE_SIZE(a) ((a + 7)/8)
+#define WLC_RRM_RX_NEIGHBOR_REPORT_TOKEN_STR	"received neighbor report (token = %d)\n"
 
-extern int32 dhd_bit_pack(char *buf, int32 buf_len, int bit_offset, uint32 data, int32 bit_length);
-extern int32 dhd_base64_encode(char* in_buf, int32 in_buf_len, char* out_buf, int32 out_buf_len);
-#endif /* __BITPACK_H */
+#define WLC_ASSOC_TGT_SEL_JOIN_PREF_FIELD_STR	\
+	"wl%d: RSSI is %d; %d roaming target[s]; Join preference fields are 0x%x\n"
+
+#define WLC_ASSOC_TGT_SEL_TGTS_AFTER_PRUNE_STR	"result: %d target(s) after prune\n"
+#define WLC_ASSOC_SCAN_START_ALL_CHNLS_STR	"scan start: all channels\n"
+#define WLC_ASSOC_ROAM_SCAN_RSN_STR		"roam scan: reason=%d rssi=%d\n"
+#define WLC_ASSOC_FULL_SCAN_STR			"starting full scan\n"
+#define WLC_ASSOC_FULL_SCAN_LP_STR		"starting full scan (LP:%d)\n"
+
+#endif /* _EVENT_LOG_API_STRINGS_H_ */

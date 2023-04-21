@@ -2,7 +2,7 @@
  * Basic types and constants relating to 802.11ax/HE STA
  * This is a portion of 802.11ax definition. The rest are in 802.11.h.
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -530,7 +530,7 @@ typedef BWL_PRE_PACKED_STRUCT struct multi_bssid_ie {
 	uint8 id;
 	uint8 len;
 	uint8 maxbssid_indicator;
-	nontrans_bssid_profile_subie_t profile[BCM_FLEX_ARRAY];
+	nontrans_bssid_profile_subie_t profile[1];
 } BWL_POST_PACKED_STRUCT multi_bssid_ie_t;
 typedef multi_bssid_ie_t multi_BSSID_ie_t;
 

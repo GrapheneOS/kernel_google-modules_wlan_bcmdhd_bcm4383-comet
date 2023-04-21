@@ -3,7 +3,7 @@
  * This header file housing the define and function prototype use by
  * both the wl driver, tools & Apps.
  *
- * Copyright (C) 2022, Broadcom.
+ * Copyright (C) 2023, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1005,6 +1005,8 @@ int channel_5g_160mhz_to_id(uint ch);
 int channel_6g_160mhz_to_id(uint ch);
 
 int channel_6g_320mhz_to_id(uint ch);
+bool wf_chspec_get_20m_lower_upper_channel(chanspec_t chspec, uint* lower, uint* upper,
+	uint *separation);
 #if defined(WL_BW320MHZ)
 /*
  * Returns center channel for a contiguous chanspec and
