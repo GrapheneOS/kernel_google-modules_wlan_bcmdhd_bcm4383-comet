@@ -1017,7 +1017,7 @@ typedef struct {
 
 extern void pktlist_add(pktlist_info_t *pktlist, void *p, int len, char *file);
 extern void pktlist_remove(pktlist_info_t *pktlist, void *p);
-extern char* pktlist_dump(pktlist_info_t *pktlist, char *buf);
+extern char* pktlist_dump(pktlist_info_t *pktlist, char *buf, uint bufsz);
 #ifdef BCMDBG_PTRACE
 extern void pktlist_trace(pktlist_info_t *pktlist, void *pkt, uint16 bit);
 #endif /* BCMDBG_PTRACE */

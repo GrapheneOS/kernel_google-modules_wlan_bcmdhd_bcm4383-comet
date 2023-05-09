@@ -277,8 +277,7 @@ typedef struct hs20_ie hs20_ie_t;
 #define DSCP_POLICY_ATTR_HDR_LEN	2u	/* id + 1-byte length field */
 
 /* DSCP Policy attributes as defined in the QoS Mgmt spec */
-typedef enum qos_mgmt_attrs qos_mgmt_attrs_e;
-enum qos_mgmt_attrs {
+typedef enum qos_mgmt_attrs {
 
 	/* DSCP Port Range attribute */
 	DSCP_POLICY_PORT_RANGE_ATTR	= 1,
@@ -291,7 +290,7 @@ enum qos_mgmt_attrs {
 
 	/* DSCP Domain Name attribute */
 	DSCP_POLICY_DOMAIN_NAME_ATTR	= 4
-};
+} qos_mgmt_attrs_e;
 
 /* DSCP Policy Query frame header */
 typedef BWL_PRE_PACKED_STRUCT struct dscp_policy_query_action_vs_frmhdr {
@@ -359,8 +358,7 @@ typedef BWL_PRE_PACKED_STRUCT struct dscp_policy_capability_attr {
 #define DSCP_POLICY_CAPABILITY_ATTR_SIZE (sizeof(dscp_policy_capability_attr_t))
 
 /* QoS Mgmt capability bits */
-typedef enum qos_mgmt_cap_bits qos_mgmt_cap_bits_e;
-enum qos_mgmt_cap_bits {
+typedef enum qos_mgmt_cap_bits {
 
 	/* When bit 0 is set, indicates the DSCP Policy support */
 	QOS_MGMT_CAP_DSCP_POLICY			= (1u << 0u),
@@ -376,7 +374,7 @@ enum qos_mgmt_cap_bits {
 	 * not supported.
 	 */
 	QOS_MGMT_CAP_SCS_TRAFFIC_DESCRIPTION		= (1u << 2u)
-};
+} qos_mgmt_cap_bits_e;
 
 /* DSCP Port Range attribute */
 typedef BWL_PRE_PACKED_STRUCT struct dscp_policy_port_range_attr {
