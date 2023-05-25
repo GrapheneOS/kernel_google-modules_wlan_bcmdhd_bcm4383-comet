@@ -4256,6 +4256,7 @@ extern int dhd_coredump_mempool_init(dhd_pub_t *dhd);
 extern void dhd_coredump_mempool_deinit(dhd_pub_t *dhd);
 #define DHD_COREDUMP_MEMPOOL_INIT(dhdp)		dhd_coredump_mempool_init(dhdp)
 #define DHD_COREDUMP_MEMPOOL_DEINIT(dhdp)	dhd_coredump_mempool_deinit(dhdp)
+#define DHD_COREDUMP_IGNORE_TRAP_SIG "host_wake_asserted_for_too_long"
 #else
 #define DHD_COREDUMP_MEMPOOL_INIT(dhdp)		do { /* noop */ } while (0)
 #define DHD_COREDUMP_MEMPOOL_DEINIT(dhdp)	do { /* noop */ } while (0)
@@ -5049,7 +5050,7 @@ int dhd_get_reboot_status(struct dhd_pub *dhdp);
 static INLINE int dhd_get_reboot_status(struct dhd_pub *dhdp) { return 0; }
 #endif /* __linux__ */
 
-#ifdef WBRC
+#if defined(WBRC) && defined(BT_FW_DWNLD)
 int dhd_bt_fw_dwnld_blob(void *wl_hdl, char* buf, size_t len);
 #endif
 

@@ -712,6 +712,9 @@ typedef struct wl_bss_config {
 #define STAID3_IDX	3
 #define HE_STAID_MAX_VAL	0x07FF
 
+#define HE_BSSCOLOR_EMLSR_LINKID_VALID	0x80
+#define HE_BSSCOLOR_EMLSR_LINKID_MASK	0x7F
+
 typedef struct wl_bsscolor_info {
 	uint16 version;		/**< structure version */
 	uint16 length;		/**< length of the bsscolor info */
@@ -721,6 +724,8 @@ typedef struct wl_bsscolor_info {
 	uint8	disable_bsscolor_ind;	/**< To disable particular bsscolor */
 	/* bsscolor_disable to be added as part of D1.0 */
 	uint16	staid_info[HE_MAX_STAID_PER_BSSCOLOR];	/**< 0-3 staid info of each bsscolor */
+	uint8	emlsr_linkid;	/**<emlsr linkid of the cfg */
+	uint8	PAD[3];
 } wl_bsscolor_info_t;
 
 #define WL_BSS_USER_RADAR_CHAN_SELECT	0x1	/**< User application will randomly select
@@ -1029,6 +1034,64 @@ typedef struct wl_scan_params_v3 {
 #define WL_MAX_ROAMSCAN_V3_DATSZ \
 	(WL_SCAN_PARAMS_V3_FIXED_SIZE + (WL_NUMCHANNELS * sizeof(uint16)))
 
+/* changes in wl_scan_params_v4 as comapred to wl_scan_params (v3)
+ * adding scan_type_ext field.
+ */
+typedef struct wl_scan_params_v4 {
+	uint16 version;			/* Version of wl_scan_params, change value of
+					 * WL_SCAN_PARAM_VERSION on version update
+					 */
+	uint16 length;			/* length of structure wl_scan_params_v1_t
+					 * without implicit pad
+					 */
+	wlc_ssid_t ssid;		/**< default: {0, ""} */
+	struct ether_addr bssid;	/**< default: bcast */
+	int8 bss_type;			/**< default: any,
+					 * DOT11_BSSTYPE_ANY/INFRASTRUCTURE/INDEPENDENT
+					 */
+	uint8 ssid_type;		/**< ssid_type_flag ,0 use default, and flags specified
+					 * WL_SCAN_SSID_FLAGS
+					 */
+	uint32 scan_type;		/**< flags, 0 use default, and flags specified in
+					 * WL_SCANFLAGS_XXX
+					 */
+	uint32 scan_type_ext;		/**< flags, 0 use default, and flags specified in
+					 * WL_SCANFLAGS_EXT_XXX
+					 */
+	int32 nprobes;			/**< -1 use default, number of probes per channel */
+	int32 active_time;		/**< -1 use default, dwell time per channel for
+					 * active scanning
+					 */
+	int32 passive_time;		/**< -1 use default, dwell time per channel
+					 * for passive scanning
+					 */
+	int32 home_time;		/**< -1 use default, dwell time for the home channel
+					 * between channel scans
+					 */
+	int32 channel_num;		/**< count of channels and ssids that follow
+					 *
+					 * low half is count of channels in channel_list, 0
+					 * means default (use all available channels)
+					 *
+					 * high half is entries in wlc_ssid_t array that
+					 * follows channel_list, aligned for int32 (4 bytes)
+					 * meaning an odd channel count implies a 2-byte pad
+					 * between end of channel_list and first ssid
+					 *
+					 * if ssid count is zero, single ssid in the fixed
+					 * parameter portion is assumed, otherwise ssid in
+					 * the fixed portion is ignored
+					 */
+	uint16 channel_list[];		/**< list of chanspecs */
+} wl_scan_params_v4_t;
+
+#define WL_SCAN_PARAMS_VERSION_V4		4
+
+/** size of wl_scan_params not including variable length array */
+#define WL_SCAN_PARAMS_V4_FIXED_SIZE	(OFFSETOF(wl_scan_params_v4_t, channel_list))
+#define WL_MAX_ROAMSCAN_V4_DATSZ \
+	(WL_SCAN_PARAMS_V4_FIXED_SIZE + (WL_NUMCHANNELS * sizeof(uint16)))
+
 #define ISCAN_REQ_VERSION_V1 1
 #define ISCAN_REQ_VERSION_V2 2
 
@@ -1121,6 +1184,7 @@ typedef struct iscan_buf {
 #define ESCAN_REQ_VERSION_V1 1
 #define ESCAN_REQ_VERSION_V2 2
 #define ESCAN_REQ_VERSION_V3 3
+#define ESCAN_REQ_VERSION_V4 4
 
 typedef struct wl_escan_params_v1 {
 	uint32 version;
@@ -1143,9 +1207,17 @@ typedef struct wl_escan_params_v3 {
 	wl_scan_params_v3_t params;
 } wl_escan_params_v3_t;
 
+typedef struct wl_escan_params_v4 {
+	uint32 version;
+	uint16 action;
+	uint16 sync_id;
+	wl_scan_params_v4_t params;
+} wl_escan_params_v4_t;
+
 #define WL_ESCAN_PARAMS_V1_FIXED_SIZE (OFFSETOF(wl_escan_params_v1_t, params) + sizeof(wlc_ssid_t))
 #define WL_ESCAN_PARAMS_V2_FIXED_SIZE (OFFSETOF(wl_escan_params_v2_t, params) + sizeof(wlc_ssid_t))
 #define WL_ESCAN_PARAMS_V3_FIXED_SIZE (OFFSETOF(wl_escan_params_v3_t, params) + sizeof(wlc_ssid_t))
+#define WL_ESCAN_PARAMS_V4_FIXED_SIZE (OFFSETOF(wl_escan_params_v4_t, params) + sizeof(wlc_ssid_t))
 
 /** event scan reduces amount of SOC memory needed to store scan results */
 typedef struct wl_escan_result_v109 {
@@ -1711,6 +1783,34 @@ typedef struct wifi_radio_stat_v2 {
 	uint32 num_channels;
 	uint8 channels[];
 } wifi_radio_stat_v2_t;
+
+/* per rate statistics */
+#define WLC_LINKSTATS_RATESTATS_V1	1u
+
+/* wifi rate */
+typedef struct wlc_link_stats_wifi_rate_v1 {
+	uint32 preamble;	/* 0: OFDM, 1:CCK, 2:HT 3:VHT 4:HE 5:EHT 6..7 reserved */
+	uint32 nss;		/* 0:1x1, 1:2x2, 3:3x3, 4:4x4 */
+	uint32 bw;		/* 0:20MHz, 1:40Mhz, 2:80Mhz, 3:160Mhz */
+	uint32 rateMcsIdx;	/* OFDM/CCK rate code would be as per ieee std
+				 * in the units of 0.5mbps
+				 * For HT/VHT/HE/EHT, it would be mcs index
+				 */
+	uint32 reserved;	/* reserved */
+	uint32 bitrate;		/* units of 100 Kbps */
+} wlc_link_stats_wifi_rate_v1_t;
+
+typedef struct wlc_link_stats_wifi_rate_stat_v1 {
+	uint16 version;
+	uint16 length;
+	uint32 tx_mpdu;        /* number of successfully transmitted data pkts (ACK rcvd) */
+	uint32 rx_mpdu;        /* number of received data pkts */
+	uint32 mpdu_lost;      /* number of data packet losses (no ACK) */
+	uint32 retries;        /* total number of data pkt retries */
+	uint32 retries_short;  /* number of short data pkt retries */
+	uint32 retries_long;   /* number of long data pkt retries */
+	wlc_link_stats_wifi_rate_v1_t rate; /* rate info */
+} wlc_link_stats_wifi_rate_stat_v1_t;
 
 /* This is obsolete.Pls add new fields by extending versioned structure.
  * cca_congest_ext_vX_t [X is latest version]
@@ -3907,6 +4007,7 @@ typedef struct wl_mws_ocl_override {
 #define OCL_DISABLED_SCPEND		(1u << 15u)  /* Disabled due to scan pending */
 #define OCL_DISABLED_EMLSR		(1u << 16u)  /* Disabled due to EMLSR enabled */
 #define OCL_DISABLED_BTBPHYWAR		(1u << 17u)  /* Disabled during BT eSCO traffic */
+#define OCL_DISABLED_SCCA_MIT		(1u << 18u)  /* Disabled when SCCA enabled, sccatxlbt=1 */
 
 
 /* Bits for hw_status */
@@ -10503,6 +10604,19 @@ typedef BWL_PRE_PACKED_STRUCT struct nd_param {
 } BWL_POST_PACKED_STRUCT nd_param_t;
 #include <packed_section_end.h>
 
+/* restricted_roam IOVAR */
+#define WLC_RESTRICTED_ROAM_CONFIG_VER_1 (1u)
+typedef struct wlc_restricted_roam_cfg_v1 {
+	uint16	ver;			/* Version */
+	uint16	len;			/* Length of the structure */
+	uint32	lowrssi_roam_thresh;	/* time thresh for restricting low rssi roam */
+} wlc_restricted_roam_cfg_v1_t;
+
+enum wlc_restricted_roam_cmd_id {
+	WLC_RESTRICTED_ROAM_XTLV_LOWRSSI_ROAM_THRESH_ID		= 1u,
+	WLC_RESTRICTED_ROAM_XTLV_LAST_ID
+};
+
 typedef struct wl_pfn_roam_thresh {
 	uint32 pfn_alert_thresh; /**< time in ms */
 	uint32 roam_alert_thresh; /**< time in ms */
@@ -10516,6 +10630,7 @@ typedef struct wl_pfn_roam_thresh {
 #define PFN_ALERT_THRESH_EXCEEDED	(1<<3)
 #define CONST_AWAKE_DUR_ALERT		(1<<4)
 #define CONST_AWAKE_DUR_RECOVERY	(1<<5)
+#define RESTRICTED_LOWRSSI_ROAM_THRESH_EXCEEDED	(1<<6)
 
 #define MIN_PM_ALERT_LEN 9
 
@@ -14865,6 +14980,7 @@ enum wl_nan_cmd_xtlv_id {
 #define WL_NAN_CMD_DBG_COMP_ID		0x0f
 #define WL_NAN_CMD_PAIRING_COMP_ID	0x10
 #define WL_NAN_CMD_PAIRING_PEER_COMP_ID	0x11
+#define WL_NAN_CMD_TETHER_COMP_ID	0x12
 
 
 #define WL_NAN_CMD_COMP_SHIFT		8
@@ -14997,7 +15113,9 @@ typedef enum wl_nan_tlv {
 	WL_NAN_XTLV_PAIRING_PEER_NIK	= NAN_CMD(WL_NAN_CMD_PAIRING_COMP_ID, 0x05),
 
 	/* XTLV list to include NPK, local NIK and peer NIK */
-	WL_NAN_XTLV_PAIRING_XTLV_LIST = NAN_CMD(WL_NAN_CMD_PAIRING_COMP_ID, 0x06)
+	WL_NAN_XTLV_PAIRING_XTLV_LIST = NAN_CMD(WL_NAN_CMD_PAIRING_COMP_ID, 0x06),
+
+	WL_NAN_XTLV_TETHER		= NAN_CMD(WL_NAN_CMD_TETHER_COMP_ID, 0x01) /* Tether xtlv */
 } wl_nan_tlv_t;
 
 /* Sub Module ID's for NAN */
@@ -18069,10 +18187,10 @@ typedef enum {
 	WL_WSEC_INFO_SAE_GROUPS = (WL_WSEC_INFO_BSS_BASE + 0xD),
 	WL_WSEC_INFO_OCV = (WL_WSEC_INFO_BSS_BASE + 0xE),
 	WL_WSEC_INFO_BSS_KEY_IDLE_TIME = (WL_WSEC_INFO_BSS_BASE + 0xF),
-	WL_WSEC_INFO_BSS_INCLUDE_RSNXE = (WL_WSEC_INFO_BSS_BASE + 0x10), /**<
-									    Include RSNXE in pure
-									    WPA-PSK mode
-									    */
+	/* Include RSNXE in  pure WPA-PSK mode */
+	WL_WSEC_INFO_BSS_INCLUDE_RSNXE = (WL_WSEC_INFO_BSS_BASE + 0x10),
+	/* set/get OWE DH group Id */
+	WL_WSEC_INFO_OWE_DH_GROUP = (WL_WSEC_INFO_BSS_BASE + 0x11),
 
 	/*
 	 * ADD NEW ENUM ABOVE HERE
@@ -18164,7 +18282,8 @@ typedef struct wl_wsec_info {
 #define AP_BLOCK_NONE		0x00000000u	/* No restriction (default) */
 /* Policy when WPA3/SAE is configured for the BSS */
 #define AP_ALLOW_WPA2		0x00000001u	/* Allow WPA2PSK AP during join or roam */
-#define AP_ALLOW_TSN		0x00000002u	/* Allow WPA3 transition AP during join or roam  */
+#define AP_ALLOW_WPA3_TO_WPA2_TSN	0x00000002u	/* Replacement for AP_ALLOW_TSN */
+#define AP_ALLOW_TSN			AP_ALLOW_WPA3_TO_WPA2_TSN
 #define AP_ALLOW_WPA3_ONLY	0x00000004u	/* Allow WPA3 only AP during join or roam */
 /* AP_ALLOW_WPA3_ONLY is write only
 ** supports AP_ALLOW_WPA3_2G_5G_ONLY and AP_ALLOW_WPA3_6G_ONLY
@@ -18173,6 +18292,9 @@ typedef struct wl_wsec_info {
 /* Policy when WPA2 PSK, but not SAE is configured for the BSS */
 #define AP_WPA2_PSK_NO_MIX_SEC	0x00000008u	/* Disallow Mixed WPA/WPA2 security during roam */
 
+#define AP_ALLOW_WPA2_to_WPA_NO_TSN	0x00000008u /* Replacement for AP_WPA2_PSK_NO_MIX_SEC */
+#define AP_ALLOW_WPA3_TO_WPA_NO_TSN	0x00000040u /* Dont allow WPA3 to WPA TSN */
+#define AP_ALLOW_NO_TSN			(AP_ALLOW_WPA3_TO_WPA_NO_TSN | AP_ALLOW_WPA2_to_WPA_NO_TSN)
 #define AP_ALLOW_WPA3_2G_5G_ONLY 0x00000010u	/* Allow WPA3 only 2G/5G AP join or roam */
 #define AP_ALLOW_WPA3_6G_ONLY	0x00000020u	/* Allow WPA3 only 6G AP during join or roam */
 /* All flags */
@@ -19043,109 +19165,6 @@ typedef struct wl_bssload_static {
 	uint16 aac;
 } wl_bssload_static_t;
 
-/* Buffer of size WLC_SAMPLECOLLECT_MAXLEN (=10240 for 4345a0 ACPHY)
- * gets copied to this, multiple times
- */
-typedef enum wl_gpaio_option {
-	GPAIO_PMU_AFELDO,
-	GPAIO_PMU_TXLDO,
-	GPAIO_PMU_VCOLDO,
-	GPAIO_PMU_LNALDO,
-	GPAIO_PMU_ADCLDO,
-	GPAIO_ICTAT_CAL,
-	GPAIO_PMU_CLEAR,
-	GPAIO_OFF,
-	GPAIO_PMU_LOGENLDO,
-	GPAIO_PMU_RXLDO2G,
-	GPAIO_PMU_RXLDO5G,
-	GPAIO_PMU_LPFTXLDO,
-	GPAIO_PMU_LDO1P6,
-	GPAIO_RCAL,
-	GPAIO_IQDAC_BUF_DC_MEAS,
-	GPAIO_IQDAC_BUF_DC_CLEAR,
-	GPAIO_DAC_IQ_DC_RDBK,
-	GPAIO_DAC_IQ_DC_RDBK_CLEAR,
-	GPAIO_AFE_LDO_FOR_DAC_DC,
-	GPAIO_PA5G_VCAS_SOURCE,
-	GPAIO_BIQ2_DC_MEAS,
-	GPAIO_BIQ2_DC_CLEAR,
-	GPAIO_VBATMONITOR,
-	GPAIO_PA5G_VCAS_GMDRAIN,
-	GPAIO_PMU_ROLDO,
-	GPAIO_PMU_PFDLDO,
-	GPAIO_PMU_LCHLDO,
-	GPAIO_PMU_MMDLDO,
-	GPAIO_PMU_VCOCORELDO,
-	GPAIO_PMU_PLLLDO,
-	GPAIO_PMU_RXLDO,
-	GPAIO_IQDAC_DC_TP,
-	GPAIO_BG_ICTAT_CAL,
-	GPAIO_BG_ICTAT_UNCAL,
-	GPAIO_BG_CTAT_UNCAL,
-	GPAIO_RX_TIA_VDD,
-	GPAIO_RX_NBIAS_TIA,
-	GPAIO_RX_NBIAS_LPF,
-	GPAIO_RX_CMREF_BB,
-	GPAIO_RX_CMREF_RF,
-	GPAIO_RX_LDO_RF_V0P8,
-	GPAIO_RX_IBIAS_N,
-	GPAIO_RX_IBIAS_P,
-	GPAIO_DIG_LDO,
-	GPAIO_IPTAT_UNCAL,
-	GPAIO_IPTAT_CAL,
-	GPAIO_VPTAT_UNCAL,
-	GPAIO_VCTAT_CAL,
-	GPAIO_VBE,
-	GPAIO_IOUT_TEST_3U,
-	GPAIO_VCO_BIAS_N,
-	GPAIO_VCO_BIAS_P,
-	GPAIO_VCO_TEMPCO_N,
-	GPAIO_VCO_TEMPCO_P,
-	GPAIO_MMD_LDO,
-	GPAIO_VCO_LDO,
-	GPAIO_SRO_LDO,
-	GPAIO_TX_VCTRL,
-	GPAIO_TX_VCTRL_TC,
-	GPAIO_GPA_BUF,
-	GPAIO_LPBK_OUT,
-	GPAIO_ADC_LPBK_INN,
-	GPAIO_ADC_LPBK_INP,
-	GPAIO_ETSSI,
-	GPAIO_PAD5G_GM_BIAS_V,
-	GPAIO_PAD5G_GM_DRAIN_V,
-	GPAIO_PAD5G_CAS_BIAS_V,
-	GPAIO_PMU_LDO1P8,
-	GPAIO_RX_GM_VDD,
-	GPAIO_RX_TIA_FINAL_CM_V,
-	GPAIO_RX_TIA_FINAL_CM_V1,
-	GPAIO_RX_TIA_FINAL_CM_V2,
-	GPAIO_PA5G_GM_BIAS_V,
-	GPAIO_PA5G_GM_DRAIN_V,
-	GPAIO_PA5G_CAS_BIAS_V,
-	GPAIO_PMU_LOGENLDO1,
-	GPAIO_PMU_RX5G_RF_LDO,
-	GPAIO_PMU_LPF_LDO,
-	GPAIO_VCO_LDO_TX,
-	GPAIO_VCO_LDO_RX,
-	GPAIO_RX_PD_LDO,
-	GPAIO_RX_MMD_LDO,
-	GPAIO_DTX_DIG_LDO,
-	GPAIO_DTX_RF_LDO,
-	GPAIO_RX_LDO_LOGIC,
-	GPAIO_RX_LDO_BB,
-	GPAIO_PMU_PLL_VCO_LDO,
-	GPAIO_PMU_PLL_RO_LDO,
-	GPAIO_PMU_BTVCO_LDO,
-	GPAIO_PMU_BTPLL_LDO,
-	GPAIO_PMU_PLLMMD_LDO,
-	GPAIO_PMU_BBLDO,
-	GPAIO_PMU_IF_LDO,
-	GPAIO_AFEDIV_LDO_OUT,
-	GPAIO_WBADC_REF_LDO_OUT,
-	GPAIO_DTX_RF_LDO_BYPASS,
-	RETRIGGER_MINIPMUCAL
-} wl_gpaio_option_t;
-
 /** IO Var Operations - the Value of iov_op In wlc_ap_doiovar */
 typedef enum wlc_ap_iov_bss_operation {
 	WLC_AP_IOV_OP_DELETE                   = -1,
@@ -19871,7 +19890,8 @@ typedef wl_ftm_iov_t wl_proxd_iov_t;
 
 /** status - TBD BCME_ vs proxd status - range reserved for BCME_ */
 enum {
-	WL_PROXD_E_LAST			= -1058,
+	WL_PROXD_E_LAST			= -1059,
+	WL_PROXD_E_CHANSW       		= -1059,
 	WL_PROXD_E_PKTFREED		= -1058,
 	WL_PROXD_E_ASSOC_INPROG         = -1057,
 	WL_PROXD_E_NOAVAIL		= -1056,
@@ -21083,10 +21103,11 @@ typedef enum wl_interface_type {
  * Bit 5 of flags field indicates mesh usage on this interface
  */
 #define WL_INTERFACE_MESH_USE		(1u << 5u)
+#define WL_INTERFACE_NAN_TETHER_USE	(1u << 6u)
 
 #define WL_INTERFACE_IOV_ALLOWED_FLAGS (WL_INTERFACE_CREATE_AP | WL_INTERFACE_MAC_USE | \
 		WL_INTERFACE_WLC_INDEX_USE | WL_INTERFACE_IF_INDEX_USE | \
-		WL_INTERFACE_BSSID_INDEX_USE | WL_INTERFACE_MESH_USE)
+		WL_INTERFACE_BSSID_INDEX_USE | WL_INTERFACE_MESH_USE | WL_INTERFACE_NAN_TETHER_USE)
 
 #define WL_INTERFACE_IOV_FLAGS_VALID(_f) (((_f) & ~WL_INTERFACE_IOV_ALLOWED_FLAGS) == 0u)
 
@@ -24909,6 +24930,7 @@ enum {
 	WL_MLO_CMD_LINK_PS_BMAP		= 8u,	/* Modify PS state of a particular link in MLO. */
 	WL_MLO_CMD_LINK_DORMANT_BMAP	= 9u,	/* Bitmap to configure dormant state for links */
 	WL_MLO_CMD_REC_LINK_BMAP	= 10u,	/* Bitmap to configure recommended links */
+	WL_MLO_CMD_CONFIG_PREF		= 11u,	/* Configure mlo mode and band preferences */
 	/* Add new sub command IDs here... */
 
 	/* debug/test related sub-commands, mogrify? */
@@ -24939,28 +24961,52 @@ typedef struct wl_mlo_link_config_v1 {
 } wl_mlo_link_config_v1_t;
 
 /* MLO modes of operation */
-#define MLO_STR			(0u)
-/* MLO_TDM is being deprecated, pls use MLO_EMLSR */
-#define MLO_TDM			(1u)
-#define MLO_EMLSR		(1u)
-#define MLO_AUTO		(2u)
-#define WL_MLO_MODE_INVALID	(0xFFu)
+#define MLO_STR			0u	/* STR Mode */
+#define MLO_TDM			1u	/* Deprecated over MLO_EMLSR */
+#define MLO_EMLSR		1u	/* eMLSR Mode */
+#define MLO_AUTO		2u	/* Best possible based on scoring */
+#define MLO_MON			3u	/* Monitor Mode */
+#define MLO_3LINK		4u	/* 3 Link association (STR+eMLSR) Mode */
+#define MLO_1LINK		5u	/* Single Link MLO Mode */
+#define MLO_NONML		6u	/* Non-MLO association (legacy) */
+#define WL_MLO_MODE_INVALID	0xFFu	/* Invalid mode */
 
-#define WL_MLO_CONFIG_VER_1	(1u)
+#define WL_MLO_CONFIG_VER_1	1u
 
 /* mlo status structure for an interface */
-/* ================================================== */
-#define WL_MLO_STATUS_VER_1	(1u)
+/* ===================================== */
+#define WL_MLO_STATUS_VER_1	1u
 
 typedef struct wl_mlo_config_v1 {
-	uint16	version;
-	uint16	length;
-	uint32	flags;		/* Flags */
-	uint8	num_links;	/* Number of links */
-	uint8	mode;		/* Mode of operation */
-	struct ether_addr mld_addr;
-	wl_mlo_link_config_v1_t link_config[];
+	uint16	version;			/* Structure version */
+	uint16	length;				/* Length of structure */
+	uint32	flags;				/* Flags */
+	uint8	num_links;			/* Number of links */
+	uint8	mode;				/* Mode of operation */
+	struct ether_addr mld_addr;		/* MLD mac address */
+	wl_mlo_link_config_v1_t link_config[];	/* Link addresses based on num_links */
 } wl_mlo_config_v1_t;
+
+/* MLO config_pref Flags definition */
+#define WL_MLO_UPDATE_MODE_PREF		(1u << 0u) /* Mode is updated in the config req */
+#define WL_MLO_UPDATE_BAND_PREF		(1u << 1u) /* Band pref is updated in the config req */
+#define WL_MLO_RESET_CONFIG_PREF	(1u << 2u) /* Reset the pref_config to invalid */
+
+#define WL_MLO_CONFIG_PREF_VER_1	1u
+
+/* Max number of mode_pref which can be given. MLO_MON is NOT valid to give in mode_pref  */
+#define MLO_MODE_PREF_MAX_V1		6u
+
+typedef struct wl_mlo_config_pref_v1 {
+	uint16	version;			/* Structure version */
+	uint16	length;				/* Length of structure */
+	uint32	flags;				/* Flags */
+	uint8	num_mode_pref;			/* Number of valid modes in mode array */
+	uint8	num_band_pref;			/* Number of valid bands in pref_band array */
+	uint8	mode_pref[MLO_MODE_PREF_MAX_V1]; /* MLO mode priority order */
+	uint8	band_pref[WL_BAND_MAX_CNT];	/* Preferred band priority order */
+	uint8	pad;				/* Explicit padding */
+} wl_mlo_config_pref_v1_t;
 
 /* mlo info structure per link */
 typedef struct wl_mlo_link_status_v1 {
@@ -27965,7 +28011,13 @@ typedef struct wl_avs_info_v1 {
 	uint32 aging;		/* aging setting in nvram */
 } wl_avs_info_v1_t;
 
+/* Placeholder, add more fields later */
+typedef struct wl_avs_info_v2 {
+	uint16 version;		/* Structure version */
+} wl_avs_info_v2_t;
+
 #define WL_AVS_INFO_VER_1	1
+#define WL_AVS_INFO_VER_2	2
 
 /* SC (scan core) command IDs */
 enum wl_sc_cmd {
@@ -31786,4 +31838,46 @@ typedef struct wlc_sup_oper_class_cfg_v1 {
 							WLC_SUP_OPR_CLS_IE_SUP_OPR_CLS_PRES_VAL)
 
 
+#define BSS_STA_INFO_PARAM_VER_1	1u
+
+/** Input structure for IOV_BSS_PEER_INFO */
+typedef struct bss_sta_info_param {
+	uint16			version;
+	struct ether_addr	ea;		/**< peer MAC address */
+}  bss_sta_info_param_t;
+
+#define BSS_STA_INFO_VER_1	1u
+
+typedef struct bss_sta_info {
+	uint16			version;
+	uint16			aid;		/* Association ID */
+	struct ether_addr	ea;		/* Peer MAC ADDR */
+	uint16			pad;		/* For 32bit alignment */
+	uint32			idle;		/**< time since data pkt rx'd from sta */
+	uint32			listen_int;	/* Min Listen interval in ms for this STA */
+	int32			rssi;		/* RSSI AVG */
+	uint32			tx_rate;	/**< current tx rate */
+	uint32			rx_rate;	/**< current rx rate */
+	uint32			in_network;	/**< in network seconds */
+	uint32			rx_pkts;	/* rx data pkts */
+	uint64			rx_bytes;	/* rx data bytes */
+	uint32			rx_retries;	/* rx pkts with retry bit set */
+	uint32			rx_error;	/* rx error */
+	uint64			tx_bytes;	/* tx total bytes */
+	uint32			tx_pkts;	/* tx total pkts */
+	uint32			tx_retries;	/* tx pkts retries */
+	uint32			tx_fail;	/* tx failures */
+	uint32			pad1;		/* For 64bits alignment */
+} bss_sta_info_t;
+
+#define BSS_STA_LIST_INFO_VER_1	1u
+
+typedef struct bss_sta_list_info {
+	uint16			version;
+	uint16			bss_sta_info_len;	/**< length of bss_sta_info_t */
+	uint32			count;			/**< number of peer info */
+	bss_sta_info_t		peer_sta_info[];	/**< peer info */
+} bss_sta_list_info_t;
+
+#define BSS_STA_LIST_INFO_FIXED_LEN OFFSETOF(bss_sta_list_info_t, peer_sta_info)
 #endif /* _wlioctl_h_ */

@@ -382,6 +382,10 @@ static void dhd_bus_check_idle_scan(dhd_bus_t *bus);
 static void dhd_bus_idle_scan(dhd_bus_t *bus);
 #endif /* IDLE_TX_FLOW_MGMT */
 
+#ifdef DHD_SSSR_DUMP
+static bool dhdpcie_fis_fw_triggered_check(struct dhd_bus *bus);
+#endif /* DHD_SSSR_DUMP */
+
 #ifdef BCM_ROUTER_DHD
 extern char * nvram_get(const char *name);
 #endif
@@ -5361,10 +5365,6 @@ dhdpcie_schedule_log_dump(dhd_bus_t *bus)
 #endif /* DHD_DUMP_FILE_WRITE_FROM_KERNEL && DHD_LOG_DUMP */
 }
 
-#ifdef DHD_SSSR_DUMP
-extern uint fis_enab_always;
-#endif /* DHD_SSSR_DUMP */
-
 static int
 dhdpcie_chk_cmnbp_status_indirect(dhd_bus_t *bus)
 {
@@ -7821,6 +7821,9 @@ dhd_bus_clearcounts(dhd_pub_t *dhdp)
 		DHD_FLOWRING_UNLOCK(flow_ring_node->lock, flags);
 	}
 
+#ifdef DHD_TREAT_D3ACKTO_AS_LINKDWN
+	bus->d3ackto_as_linkdwn_cnt = 0;
+#endif
 	dhdp->rx_pktgetpool_fail = 0;
 
 	dhd_clear_dpc_histos(dhdp);
@@ -11348,6 +11351,18 @@ dhdpcie_bus_suspend(struct dhd_bus *bus, bool state)
 		} /* bus->wait_for_d3_ack was 0 */
 #endif /* DHD_RECOVER_TIMEOUT */
 
+#ifdef DHD_TREAT_D3ACKTO_AS_LINKDWN
+		if ((bus->wait_for_d3_ack == 0) && (timeleft == 0)) {
+			DHD_ERROR(("%s: Treating D3 ack timeout during"
+				" suspend-resume as PCIe linkdown !\n", __FUNCTION__));
+			bus->is_linkdown = 1;
+			bus->d3ackto_as_linkdwn_cnt++;
+			bus->dhd->hang_reason = HANG_REASON_PCIE_LINK_DOWN_RC_DETECT;
+			dhd_os_send_hang_message(bus->dhd);
+
+		}
+#endif /* DHD_TREAT_D3ACKTO_AS_LINKDWN */
+
 		DHD_OS_WAKE_LOCK_RESTORE(bus->dhd);
 #endif /* DHD_PCIE_NATIVE_RUNTIMEPM */
 
@@ -13749,6 +13764,10 @@ void dhd_bus_dump(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf)
 	if (dhdp->d2h_hostrdy_supported) {
 		bcm_bprintf(strbuf, "hostready count:%d\n", dhdp->bus->hostready_count);
 	}
+#ifdef DHD_TREAT_D3ACKTO_AS_LINKDWN
+	bcm_bprintf(strbuf, "d3ackto_as_linkdwn_cnt: %d\n", dhdp->bus->d3ackto_as_linkdwn_cnt);
+#endif
+
 #ifdef PCIE_INB_DW
 	/* Inband device wake counters */
 	if (INBAND_DW_ENAB(dhdp->bus)) {
@@ -15948,6 +15967,9 @@ dhdpcie_wait_readshared_area_addr(dhd_bus_t *bus, uint32 *share_addr)
 			bus->dhd->collect_sssr = TRUE;
 #endif /* DHD_SSSR_DUMP */
 			if (bus->dhd->memdump_enabled) {
+#ifdef DHD_SDTC_ETB_DUMP
+				bus->dhd->collect_sdtc = TRUE;
+#endif /* DHD_SDTC_ETB_DUMP */
 				bus->dhd->memdump_type = DUMP_TYPE_DONGLE_INIT_FAILURE;
 				dhdpcie_mem_dump(bus);
 			}
@@ -16119,6 +16141,9 @@ dhdpcie_readshared(dhd_bus_t *bus)
 #if defined(DHD_FW_COREDUMP)
 			/* save core dump or write to a file */
 			if (bus->dhd->memdump_enabled) {
+#ifdef DHD_SDTC_ETB_DUMP
+				bus->dhd->collect_sdtc = TRUE;
+#endif /* DHD_SDTC_ETB_DUMP */
 				bus->dhd->memdump_type = DUMP_TYPE_DONGLE_INIT_FAILURE;
 				dhdpcie_mem_dump(bus);
 			}
@@ -17071,6 +17096,9 @@ dhdpcie_ewphw_chk_fwstate(dhd_bus_t *bus)
 		 */
 #if defined(DHD_FW_COREDUMP) && !defined(DEBUG_DNGL_INIT_FAIL)
 		if (bus->dhd->memdump_enabled) {
+#ifdef DHD_SDTC_ETB_DUMP
+			bus->dhd->collect_sdtc = TRUE;
+#endif /* DHD_SDTC_ETB_DUMP */
 			bus->dhd->memdump_type = DUMP_TYPE_DONGLE_INIT_FAILURE;
 			dhdpcie_mem_dump(bus);
 		}
@@ -17191,8 +17219,18 @@ static void
 dhdpcie_set_pmu_fisctrlsts(struct dhd_bus *bus)
 {
 	uint32 FISCtrlStatus = 0;
+	bool   fis_fw_triggered = FALSE;
 
 	if (CHIPTYPE(bus->sih->socitype) != SOCI_NCI) {
+		return;
+	}
+
+	/* FIS might be triggered in firmware, so FIS collection
+	 * should be done and fis control status reg should not be
+	 * touched before FIS collection.
+	 */
+	fis_fw_triggered = dhdpcie_fis_fw_triggered_check(bus);
+	if (fis_fw_triggered) {
 		return;
 	}
 
@@ -17537,6 +17575,8 @@ dhdpcie_chipmatch(uint16 vendor, uint16 device)
 		case BCM4398_D11AX_ID:
 		case BCM4383_CHIP_ID:
 		case BCM4383_D11AX_ID:
+		case BCM4390_CHIP_GRPID:
+		case BCM4390_D11BE_ID:
 			return 0;
 		default:
 #ifndef DHD_EFI
@@ -20002,12 +20042,65 @@ dhdpcie_validate_gci_chip_intstatus(dhd_pub_t *dhd)
 	return BCME_OK;
 }
 
+#define OOBR_DMP_FOR_D11	0x1u
+#define OOBR_DMP_FOR_SAQM	0x2u
+#define OOBR_DMP_D11_MAIN	0x1u
+#define OOBR_DMP_D11_AUX	0x2u
+#define OOBR_DMP_D11_SCAN	0x4u
+static void
+dhdpcie_dump_oobr(dhd_pub_t *dhd, uint core_bmap, uint coreunit_bmap)
+{
+	si_t *sih = dhd->bus->sih;
+	uint curcore = 0;
+	int i = 0;
+	hndoobr_reg_t *reg = NULL;
+	uint mask = 0x1;
+	uint val = 0, idx = 0;
+
+	if (CHIPTYPE(sih->socitype) != SOCI_NCI) {
+		return;
+	}
+
+	curcore = si_coreid(dhd->bus->sih);
+
+	if ((reg = si_setcore(sih, HND_OOBR_CORE_ID, 0)) != NULL) {
+		for (i = 0; i < 4; ++i) {
+			val = R_REG(dhd->osh, &reg->intstatus[i]);
+			DHD_PRINT(("reg: hndoobr_reg->intstatus[%d] = 0x%x\n", i, val));
+		}
+		for (i = 0; i < 4; ++i) {
+			val = R_REG(dhd->osh, &reg->topextrsrcmap[i]);
+			DHD_PRINT(("reg: hndoobr_reg->topextrsrcmap[%d] = 0x%x\n", i, val));
+		}
+		if (core_bmap & OOBR_DMP_FOR_D11) {
+			for (i = 0; coreunit_bmap != 0; ++i) {
+				if (coreunit_bmap & mask) {
+					idx = si_findcoreidx(sih, D11_CORE_ID, i);
+					val = R_REG(dhd->osh,
+						&reg->percore_reg[idx].clkpwrreq);
+					DHD_PRINT(("reg: D11 core, coreunit %d, clkpwrreq=0x%x\n",
+						i, val));
+				}
+				coreunit_bmap >>= 1;
+			}
+		}
+		if (core_bmap & OOBR_DMP_FOR_SAQM) {
+			idx = si_findcoreidx(sih, D11_SAQM_CORE_ID, 0);
+			val = R_REG(dhd->osh, &reg->percore_reg[idx].clkpwrreq);
+			DHD_PRINT(("reg: D11_SAQM core, coreunit 0, clkpwrreq=0x%x\n", val));
+		}
+	}
+
+	si_setcore(sih, curcore, 0);
+}
+
 int
 dhdpcie_sssr_dump(dhd_pub_t *dhd)
 {
 	uint32 powerctrl_val = 0, pwrctrl = 0;
 	uint32 pwrreq_val = 0;
 	si_t *sih = dhd->bus->sih;
+	uint core_bmap = 0, coreunit_bmap = 0;
 
 	if (!dhd->sssr_inited) {
 		DHD_ERROR(("%s: SSSR not inited\n", __FUNCTION__));
@@ -20077,6 +20170,33 @@ dhdpcie_sssr_dump(dhd_pub_t *dhd)
 
 		if ((pwrctrl >> SRPWR_STATUS_SHIFT) & SRPWR_DMN1_ARMBPSD_MASK) {
 			DHD_ERROR(("DIG Domain is not going down. The DIG SSSR is not valid.\n"));
+		}
+
+		if ((pwrctrl >> SRPWR_STATUS_SHIFT) & SRPWR_DMN2_MACAUX) {
+			DHD_ERROR(("MAC AUX Domain is not going down.\n"));
+			core_bmap |= OOBR_DMP_FOR_D11;
+			coreunit_bmap |= OOBR_DMP_D11_AUX;
+		}
+
+		if ((pwrctrl >> SRPWR_STATUS_SHIFT) & SRPWR_DMN3_MACMAIN) {
+			DHD_ERROR(("MAC MAIN Domain is not going down.\n"));
+			core_bmap |= OOBR_DMP_FOR_D11;
+			coreunit_bmap |= OOBR_DMP_D11_MAIN;
+		}
+
+		if ((pwrctrl >> SRPWR_STATUS_SHIFT) & SRPWR_DMN4_MACSCAN) {
+			DHD_ERROR(("MAC SCAN Domain is not going down.\n"));
+			core_bmap |= OOBR_DMP_FOR_D11;
+			coreunit_bmap |= OOBR_DMP_D11_SCAN;
+		}
+
+		if ((pwrctrl >> SRPWR_STATUS_SHIFT) & SRPWR_DMN6_SAQM) {
+			DHD_ERROR(("SAQM Domain is not going down.\n"));
+			core_bmap |= OOBR_DMP_FOR_SAQM;
+		}
+
+		if (core_bmap) {
+			dhdpcie_dump_oobr(dhd, core_bmap, coreunit_bmap);
 		}
 
 		dhd_bus_pcie_pwr_req_wl_domain(dhd->bus, CC_REG_OFF(PowerControl), TRUE);
@@ -20360,6 +20480,23 @@ dhdpcie_reset_hwa(dhd_pub_t *dhd)
 	return BCME_OK;
 }
 
+static bool
+dhdpcie_fis_fw_triggered_check(struct dhd_bus *bus)
+{
+	uint32 FISCtrlStatus;
+
+	FISCtrlStatus = PMU_REG(bus->sih, FISCtrlStatus, 0, 0);
+	if ((FISCtrlStatus & PMU_CLEAR_FIS_DONE_MASK) == 0) {
+		DHD_PRINT(("%s: FIS trigger done bit not set. FIS control status=0x%x\n",
+		 __FUNCTION__, FISCtrlStatus));
+		return FALSE;
+	} else {
+		DHD_PRINT(("%s: FIS trigger done bit set. FIS control status=0x%x\n",
+		 __FUNCTION__, FISCtrlStatus));
+		return TRUE;
+	}
+}
+
 static int
 dhdpcie_fis_dump(dhd_pub_t *dhd)
 {
@@ -20387,6 +20524,12 @@ dhdpcie_fis_dump(dhd_pub_t *dhd)
 	}
 
 	dhd->busstate = DHD_BUS_LOAD;
+
+	FISCtrlStatus = PMU_REG(dhd->bus->sih, FISCtrlStatus, 0, 0);
+	if ((FISCtrlStatus & PMU_CLEAR_FIS_DONE_MASK) == 0) {
+		DHD_ERROR(("%s: FIS Done bit not set. exit\n", __FUNCTION__));
+		return BCME_ERROR;
+	}
 
 	/* bring up all pmu resources */
 	PMU_REG(dhd->bus->sih, MinResourceMask, ~0,
@@ -20419,6 +20562,13 @@ dhdpcie_fis_dump(dhd_pub_t *dhd)
 	si_setcore(bus->sih, curcore, 0);
 
 	OSL_DELAY(6000);
+
+	FISCtrlStatus = PMU_REG(dhd->bus->sih, FISCtrlStatus, 0, 0);
+	FISTrigRsrcState = PMU_REG(dhd->bus->sih, FISTrigRsrcState, 0, 0);
+	RsrcState = PMU_REG(dhd->bus->sih, RsrcState, 0, 0);
+	DHD_PRINT(("%s: 0 ms before FIS_DONE clear: FISCtrlStatus=0x%x,"
+		" FISTrigRsrcState=0x%x, RsrcState=0x%x\n",
+		__FUNCTION__, FISCtrlStatus, FISTrigRsrcState, RsrcState));
 
 	/* clear FIS Done */
 	PMU_REG(dhd->bus->sih, FISCtrlStatus, PMU_CLEAR_FIS_DONE_MASK, PMU_CLEAR_FIS_DONE_MASK);
@@ -20481,6 +20631,12 @@ int
 dhd_bus_fis_dump(dhd_pub_t *dhd)
 {
 	return dhdpcie_fis_dump(dhd);
+}
+
+bool
+dhd_bus_fis_fw_triggered_check(dhd_pub_t *dhd)
+{
+	return dhdpcie_fis_fw_triggered_check(dhd->bus);
 }
 #endif /* DHD_SSSR_DUMP */
 

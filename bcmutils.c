@@ -1644,33 +1644,66 @@ pktlist_dump(pktlist_info_t *pktlist, char *buf)
 {
 	char *obuf = buf;
 	uint16 i;
+	int olen = 0;
 
-	if (buf != NULL)
-		buf += sprintf(buf, "Packet list dump:\n");
-	else
+	if (buf != NULL) {
+		olen = snprintf(buf, bufsz, "Packet list dump:\n");
+		if (olen > 0 && (uint)olen < bufsz) {
+			buf += olen;
+			bufsz -= (uint)olen;
+		} else {
+			return obuf;
+		}
+	} else {
 		printf("Packet list dump:\n");
+	}
 
 	for (i = 0; i < (pktlist->count); i++) {
-		if (buf != NULL)
-			buf += sprintf(buf, "Pkt_addr: 0x%p Line: %d File: %s\t",
+		if (buf != NULL) {
+			olen = snprintf(buf, bufsz, "Pkt_addr: 0x%p Line: %d File: %s\t",
 				OSL_OBFUSCATE_BUF(pktlist->list[i].pkt), pktlist->list[i].line,
 				pktlist->list[i].file);
-		else
+			if (olen > 0 && (uint)olen < bufsz) {
+				buf += olen;
+				bufsz -= (uint)olen;
+			} else {
+				return obuf;
+			}
+		} else {
 			printf("Pkt_addr: 0x%p Line: %d File: %s\t",
 				OSL_OBFUSCATE_BUF(pktlist->list[i].pkt),
 				pktlist->list[i].line, pktlist->list[i].file);
+		}
 
 /* #ifdef NOTDEF  Remove this ifdef to print pkttag and pktdata */
 		if (buf != NULL) {
 			if (PKTTAG(pktlist->list[i].pkt)) {
 				/* Print pkttag */
-				buf += sprintf(buf, "Pkttag(in hex): ");
-				buf += bcm_format_hex(buf, PKTTAG(pktlist->list[i].pkt),
-					OSL_PKTTAG_SZ);
+				olen = snprintf(buf, bufsz, "Pkttag(in hex): ");
+				if (olen > 0 && (uint)olen < bufsz) {
+					buf += olen;
+					bufsz -= (uint)olen;
+				} else {
+					return obuf;
+				}
+				if (bufsz >= OSL_PKTTAG_SZ) {
+					buf += bcm_format_hex(buf, PKTTAG(pktlist->list[i].pkt),
+						OSL_PKTTAG_SZ);
+					bufsz -= OSL_PKTTAG_SZ;
+				}
 			}
-			buf += sprintf(buf, "Pktdata(in hex): ");
-			buf += bcm_format_hex(buf, PKTDATA(OSH_NULL, pktlist->list[i].pkt),
-			                      PKTLEN(OSH_NULL, pktlist->list[i].pkt));
+			olen = snprintf(buf, bufsz, "Pktdata(in hex): ");
+			if (olen > 0 && olen < bufsz) {
+				buf += olen;
+				bufsz -= olen;
+			} else {
+				return obuf;
+			}
+			if (bufsz >= PKTLEN(OSH_NULL, pktlist->list[i].pkt)) {
+				buf += bcm_format_hex(buf, PKTDATA(OSH_NULL, pktlist->list[i].pkt),
+					PKTLEN(OSH_NULL, pktlist->list[i].pkt));
+				bufsz -= PKTLEN(OSH_NULL, pktlist->list[i].pkt);
+			}
 		} else {
 			void *pkt = pktlist->list[i].pkt, *npkt;
 
@@ -1709,10 +1742,17 @@ pktlist_dump(pktlist_info_t *pktlist, char *buf)
 		}
 /* #endif  NOTDEF */
 
-		if (buf != NULL)
-			buf += sprintf(buf, "\n");
-		else
+		if (buf != NULL) {
+			olen = snprintf(buf, bufsz, "\n");
+			if (olen > 0 && (uint)olen < bufsz) {
+				buf += olen;
+				bufsz -= (uint)olen;
+			} else {
+				return obuf;
+			}
+		} else {
 			printf("\n");
+		}
 	}
 	return obuf;
 }
