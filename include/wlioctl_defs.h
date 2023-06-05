@@ -297,6 +297,9 @@ typedef uint32 ratespec_t;
 						 * enable LISTEN along with PASSIVE flag
 						 */
 
+/* WL_SCANFLAGS_EXT_ flags */
+#define WL_SCANFLAGS_EXT_LOWPOWER_PARALLEL_2G_SCAN	0x1U	/* Lowpower parallel 2G scan */
+
 /* BIT MASK for 6G_SCAN_TYPE  */
 #define WL_SCAN_SSIDFLAGS_SHORT_SSID		0x01U /* include short ssid */
 #define WL_SCAN_INC_RNR				0x02U /* Include RNR channels for scan */
@@ -1484,19 +1487,29 @@ typedef uint32 ratespec_t;
 #define WL_EVENTING_MASK_EXT_LEN	ROUNDUP(WLC_E_LAST, NBBY)/NBBY
 
 /* join preference types */
-#define WL_JOIN_PREF_RSSI		1u	/* by RSSI */
-#define WL_JOIN_PREF_WPA		2u	/* by akm and ciphers */
-#define WL_JOIN_PREF_BAND		3u	/* by 802.11 band */
-#define WL_JOIN_PREF_RSSI_DELTA		4u	/* by 802.11 band only if RSSI
-						 * delta condition matches
-						 */
-#define WL_JOIN_PREF_TRANS_PREF		5u	/* defined by requesting AP */
-#define WL_JOIN_PREF_RSN_PRIO		6u	/* by RSNE/RSNXE related security priority */
-#define WL_JOIN_PREF_RSSI_PER_BAND	7u	/* RSSI boost value per band */
-#define WL_JOIN_PREF_SKIP_PSC		8u	/* Used to set flag to filter PSC channel scan */
-#define WL_JOIN_PREF_6G_DISABLE		9u	/* Used to disable join/roam 6G BSS target */
-#define WL_JOIN_PREF_ML_LINK_CAP_BOOST	10u	/* Used to configure boost for MLO targets */
-
+#define WL_JOIN_PREF_RSSI			1u	/* by RSSI */
+#define WL_JOIN_PREF_WPA			2u	/* by akm and ciphers */
+#define WL_JOIN_PREF_BAND			3u	/* by 802.11 band */
+#define WL_JOIN_PREF_RSSI_DELTA			4u	/* by 802.11 band only if RSSI
+							 * delta condition matches
+							 */
+#define WL_JOIN_PREF_TRANS_PREF			5u	/* defined by requesting AP */
+#define WL_JOIN_PREF_RSN_PRIO			6u	/* by RSNE/RSNXE related
+							 * security priority
+							 */
+#define WL_JOIN_PREF_RSSI_PER_BAND		7u	/* RSSI boost value per band */
+#define WL_JOIN_PREF_SKIP_PSC			8u	/* Used to set flag to filter
+							 * PSC channel scan
+							 */
+#define WL_JOIN_PREF_6G_DISABLE			9u	/* Used to disable join/roam
+							 * 6G BSS target
+							 */
+#define WL_JOIN_PREF_ML_LINK_CAP_BOOST		10u	/* Used to configure boost
+							 * for MLO targets
+							 */
+#define WL_JOIN_PREF_ML_SUB_LINK_WEIGHTAGE	11u	/* Percent weightage for
+							 * subsidary link
+							 */
 
 /* Join preference 6G disable Flag definition */
 #define WL_JP_6G_DISABLE_ROAM	(1u << 0u)	/* Used to set flag to disable join/roam to
@@ -2573,10 +2586,14 @@ typedef uint32 ratespec_t;
 #ifndef NFIFO_EXT
 #if defined(BCM_AQM_DMA_DESC) && !defined(BCM_AQM_DMA_DESC_DISABLED)
 #if (defined(LLW) && !defined(SWLLW)) || defined(BCM_SAQM_FOR_ALL_TX_QUEUES)
+#ifdef SAQM_STATIC_QUEUE_CONFIG_2
+#define NFIFO_EXT		9	/* 4 EDCA + 1 Mcast/Bcast +  4 Trigger */
+#else
 #define NFIFO_EXT		11	/* 4EDCA + 4 TWT + 1 Mcast/Bcast + 1 Spare + 1 LLQ */
+#endif /* SAQM_STATIC_QUEUE_CONFIG_2 */
 #else
 #define NFIFO_EXT		10	/* 4EDCA + 4 TWT + 1 Mcast/Bcast + 1 Spare */
-#endif
+#endif /* (LLW && !SWLLW) || BCM_SAQM_FOR_ALL_TX_QUEUES */
 #elif defined(WL11AX_TRIGGERQ) && !defined(WL11AX_TRIGGERQ_DISABLED)
 #define NFIFO_EXT		10
 #else

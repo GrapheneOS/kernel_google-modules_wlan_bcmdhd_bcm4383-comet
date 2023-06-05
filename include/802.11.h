@@ -398,6 +398,16 @@ BWL_PRE_PACKED_STRUCT struct dot11y_action_ext_csa {
 	struct dot11_csa_body b;	/* body of the ie */
 } BWL_POST_PACKED_STRUCT;
 
+/** Max Channel Switch Time param */
+typedef BWL_PRE_PACKED_STRUCT struct dot11_max_ie_cst {
+	uint8 id;
+	uint8 len;
+	uint8 id_ext;
+	uint8 switch_time[3];		/**< Max time delta */
+} BWL_POST_PACKED_STRUCT dot11_max_cst_ie_t;
+
+#define DOT11_MAX_CST_IE_LEN	4	/* length of Max Channel Switch Time IE body */
+
 /* TPE Transmit Power Information Field */
 #define DOT11_TPE_INFO_MAX_TX_PWR_CNT_MASK               0x07u
 #define DOT11_TPE_INFO_MAX_TX_PWR_INTRPN_MASK            0x38u
@@ -1556,6 +1566,8 @@ enum dot11_tag_ids {
 #define DOT11_MNG_SRPS_ID			(DOT11_MNG_ID_EXT_ID + EXT_MNG_SRPS_ID)
 #define EXT_MNG_BSSCOLOR_CHANGE_ID		42u	/* BSS Color Change Announcement */
 #define DOT11_MNG_BSSCOLOR_CHANGE_ID		(DOT11_MNG_ID_EXT_ID + EXT_MNG_BSSCOLOR_CHANGE_ID)
+#define EXT_MNG_MAX_CST_ID			52u	/* Max channel switch time */
+#define DOT11_MNG_MAX_CST_ID			(DOT11_MNG_ID_EXT_ID + EXT_MNG_MAX_CST_ID)
 #define OCV_EXTID_MNG_OCI_ID			54u     /* OCI element */
 #define DOT11_MNG_OCI_ID			(DOT11_MNG_ID_EXT_ID + OCV_EXTID_MNG_OCI_ID)
 #define EXT_MNG_NON_INHERITANCE_ID		56u     /* Non-Inheritance element */

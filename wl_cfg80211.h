@@ -165,6 +165,16 @@ typedef sta_info_v4_t wlcfg_sta_info_t;
 #define MSCS_CFG_DEF_TCLAS_MASK         0x5Fu   /* TCLAS mask  */
 #endif /* MSCS_CFG_DEF_TCLAS_MASK */
 
+#if defined(CONFIG_6GHZ_BKPORT) || (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+/* Native 6GHz band supported available. For Backported
+ * kernels, kernels/customer makefiles should explicitly
+ * define CONFIG_6GHZ_BKPORT
+ */
+#if defined(WL_6G_BAND)
+#define CFG80211_6G_SUPPORT
+#endif
+#endif /* CONFIG_6GHZ_BKPORT || LINUX_VER >= 5.4 */
+
 #define CH_TO_CHSPC(band, _channel) \
 	((_channel | band) | WL_CHANSPEC_BW_20 | WL_CHANSPEC_CTL_SB_NONE)
 #define CHAN2G(_channel, _freq, _flags) {			\
@@ -266,16 +276,6 @@ typedef sta_info_v4_t wlcfg_sta_info_t;
 #define WAIT_FOR_DISCONNECT_MAX 10
 #endif /* WAIT_FOR_DISCONNECT_MAX */
 #define WAIT_FOR_DISCONNECT_STATE_SYNC 10
-
-#if defined(CONFIG_6GHZ_BKPORT) || (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
-/* Native 6GHz band supported available. For Backported
- * kernels, kernels/customer makefiles should explicitly
- * define CONFIG_6GHZ_BKPORT
- */
-#if defined(WL_6G_BAND)
-#define CFG80211_6G_SUPPORT
-#endif
-#endif /* CONFIG_6GHZ_BKPORT || LINUX_VER >= 5.4 */
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
 /* Newer kernels use defines from nl80211.h */
@@ -768,7 +768,7 @@ do {									\
 #define WL_INVALID		-1
 
 #ifdef DHD_LOSSLESS_ROAMING
-#define WL_ROAM_TIMEOUT_MS	1000 /* Roam timeout */
+#define WL_ROAM_TIMEOUT_MS	3000 /* Roam timeout */
 #endif
 /* Bring down SCB Timeout to 20secs from 60secs default */
 #ifndef WL_SCB_TIMEOUT
@@ -1038,8 +1038,8 @@ enum wl_status {
 #endif /* WL_CFG80211_VSDB_PRIORITIZE_SCAN_REQUEST */
 	WL_STATUS_NESTED_CONNECT,
 	WL_STATUS_CFG80211_CONNECT,
-	WL_STATUS_AUTHORIZED
-
+	WL_STATUS_AUTHORIZED,
+	WL_STATUS_ROAMING
 };
 
 #ifdef WL_MLO
@@ -1071,6 +1071,8 @@ typedef enum wl_interface_state {
 	WL_IF_DELETE_DONE,
 	WL_IF_CHANGE_REQ,
 	WL_IF_CHANGE_DONE,
+	WL_IF_NAN_ENABLE,
+	WL_IF_NAN_DISABLE,
 	WL_IF_STATE_MAX,	/* Retain as last one */
 } wl_interface_state_t;
 
@@ -1315,6 +1317,14 @@ struct wl_eap_exp {
 } __attribute__ ((packed));
 typedef struct wl_eap_exp wl_eap_exp_t;
 
+enum wl_mlo_link_update {
+	LINK_UPDATE_ROAM_IDLE,
+	LINK_UPDATE_ROAM_PREP,
+	LINK_UPDATE_ROAM_START,
+	LINK_UPDATE_ROAM_SUCCESS,
+	LINK_UPDATE_ROAM_FAIL
+};
+
 #ifdef WL_MLO
 #define NON_ML_LINK 0xFFu
 #define WL_ASSOC_LINK_IDX 0u
@@ -1356,6 +1366,7 @@ typedef struct wl_mlo_config {
 	u8 str_links;
 	u8 emlsr_links;
 	u8 max_mlo_links;
+	u8 default_multilink_val;
 	wl_mlo_ap_cfg_t ap;
 } wl_mlo_config_t;
 #endif /* WL_MLO */
@@ -1386,7 +1397,8 @@ struct net_info {
 	u8* passphrase_cfg;
 	u16 passphrase_cfg_len;
 #ifdef WL_MLO
-	wl_mlo_link_info_t mlinfo;	/* For MLO Link interface */
+	wl_mlo_link_info_t mlinfo;          /* For MLO Link interface */
+	wl_mlo_link_info_t mlinfo_cache;    /* For MLO Link roam scenarios */
 #endif /* WL_MLO */
 	u8 *qos_up_table;
 	bool reg_update_reqd;
@@ -1944,6 +1956,7 @@ typedef struct wl_ctx_tsinfo {
 	uint64 authorize_cmplt;
 	uint64 wl_evt_hdlr_entry;
 	uint64 wl_evt_hdlr_exit;
+	uint64 roam_start;
 } wl_ctx_tsinfo_t;
 
 typedef struct wlcfg_assoc_info {
@@ -2373,6 +2386,12 @@ struct bcm_cfg80211 {
 	bool bcnprot_ap;
 };
 
+typedef struct wl_multink_config {
+	uint16	id;
+	uint16	len;
+	uint8	val;
+} wl_multink_config_t;
+
 /* Max auth timeout allowed in case of EAP is 70sec, additional 5 sec for
 * inter-layer overheads
 */
@@ -2383,7 +2402,8 @@ enum wl_state_type {
 	WL_STATE_SCANNING,
 	WL_STATE_CONNECTING,
 	WL_STATE_LISTEN,
-	WL_STATE_AUTHORIZING /* Assocated to authorized */
+	WL_STATE_AUTHORIZING, /* Assocated to authorized */
+	WL_STATE_ROAMING
 };
 
 #define WL_STATIC_IFIDX	(DHD_MAX_IFS + DHD_MAX_STATIC_IFS - 1)
@@ -3307,6 +3327,8 @@ wl_sup_event_ieee80211_error(u32 reason)
 
 #define IS_AKM_SUITE_SAE_FT(sec) (sec->wpa_auth == WLAN_AKM_SUITE_FT_OVER_SAE)
 #define IS_AKM_SUITE_CCKM(sec) ({BCM_REFERENCE(sec); FALSE;})
+#define IS_CIPHER_WEP(cipher) (cipher == WLAN_CIPHER_SUITE_WEP40) || \
+			       (cipher == WLAN_CIPHER_SUITE_WEP104)
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0))
 #define STA_INFO_BIT(info) (1ul << NL80211_STA_ ## info)
@@ -3633,8 +3655,6 @@ int wl_get_rssi_per_ant(struct net_device *dev, char *ifname, char *peer_mac, vo
 #endif /* SUPPORT_RSSI_SUM_REPORT */
 struct wireless_dev * wl_cfg80211_add_if(struct bcm_cfg80211 *cfg, struct net_device *primary_ndev,
 	wl_iftype_t wl_iftype, const char *name, u8 *mac);
-extern s32 wl_cfg80211_del_if(struct bcm_cfg80211 *cfg, struct net_device *primary_ndev,
-	struct wireless_dev *wdev, char *name);
 s32 _wl_cfg80211_del_if(struct bcm_cfg80211 *cfg, struct net_device *primary_ndev,
 	struct wireless_dev *wdev, char *ifname);
 s32 wl_cfg80211_delete_iface(struct bcm_cfg80211 *cfg, wl_iftype_t sec_data_if_type);
@@ -3779,7 +3799,7 @@ extern int wl_cfg80211_alert(struct net_device *dev);
 #endif /* WL_CFGVENDOR_SEND_ALERT_EVENT */
 extern void
 wl_cfg80211_set_okc_pmkinfo(struct bcm_cfg80211 *cfg, struct net_device *dev,
-	wsec_pmk_t pmk, bool validate_sec);
+	wsec_pmk_t *pmk, bool validate_sec);
 
 
 #ifdef AUTH_ASSOC_STATUS_EXT
@@ -3884,9 +3904,6 @@ extern wl_mlo_link_t * wl_cfg80211_get_ml_link_detail(struct bcm_cfg80211 *cfg,
 extern struct net_info * wl_cfg80211_get_mld_netinfo_by_cfg(struct bcm_cfg80211 *cfg, u8 *ml_count);
 extern wl_mlo_link_t * wl_cfg80211_get_ml_link_by_linkidx(struct bcm_cfg80211 *cfg,
 	struct net_info *mld_netinfo, u8 linkidx);
-extern wl_mlo_link_t * wl_cfg80211_get_ml_link_by_linkid(struct bcm_cfg80211 *cfg,
-	struct net_info *mld_netinfo, u8 linkid);
-extern s32 wl_mlo_set_multilink(struct bcm_cfg80211 *cfg, struct net_device *dev, u8 enable);
 #endif /* WL_MLO */
 
 /* Added wl_reassoc_params_cvt_v1 due to mis-sync between DHD and FW
@@ -3926,4 +3943,15 @@ extern bool wl_cfg80211_get_rsdb_mode(struct bcm_cfg80211 *cfg);
 #ifdef WL_MLO
 extern s32 wl_cfg80211_get_mlo_link_status(struct bcm_cfg80211 *cfg, struct net_device *dev);
 #endif /* WL_MLO */
+extern s32 wl_cfg80211_ml_link_add(struct bcm_cfg80211 *cfg, struct wireless_dev *wdev,
+	const wl_event_msg_t *e, void *data);
+extern s32 _wl_cfg80211_ml_link_add(struct bcm_cfg80211 *cfg, struct net_info *mld_netinfo,
+		void *data);
+extern wl_mlo_link_t *wl_cfg80211_get_ml_linkinfo_by_index(struct bcm_cfg80211 *cfg,
+		struct net_info *mld_netinfo, u8 index);
+
+#ifdef WL_BSS_STA_INFO
+extern void wl_cfg80211_get_bss_sta_info(struct bcm_cfg80211 *cfg, struct net_device *dev,
+	struct ether_addr *mac_ea, struct station_info *sinfo);
+#endif /* WL_BSS_STA_INFO */
 #endif /* _wl_cfg80211_h_ */

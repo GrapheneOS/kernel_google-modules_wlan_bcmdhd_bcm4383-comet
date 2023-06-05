@@ -138,8 +138,9 @@ typedef int bcmerror_t;
 #define BCME_6GCH_EPERM			-79	/* 6G channel is not permitted */
 #define BCME_6G_NO_TPE			-80	/* TPE for a 6G channel does not exist */
 #define BCME_PLL_RCCAL_FAIL		-81	/* RCCAL failed: SCAN_LPF / PLL */
+#define BCME_BT_RCCAL_FAIL		-82	/* RCCAL failed: BT caps */
 
-#define BCME_LAST			BCME_PLL_RCCAL_FAIL /* add new one above and update this */
+#define BCME_LAST			BCME_BT_RCCAL_FAIL /* add new one above and update this */
 
 /* This error code is *internal* to the driver, and is not propogated to users. It should
  * only be used by IOCTL patch handlers as an indication that it did not handle the IOCTL.
@@ -235,11 +236,14 @@ typedef int bcmerror_t;
 	"6G Not permitted", \
 	"tpe for 6g channel(s) does not exist", \
 	"PLL RC Cal failed",		\
+	"BT RC Cal failure",		\
 }
 
 /* FTM error codes [-1024, -2047] */
 enum {
-	WL_FTM_E_LAST			= -1092,
+	WL_FTM_E_LAST			= -1094,
+	WL_FTM_E_CHANSW			= -1094,
+	WL_FTM_E_NO_CSI_DATA		= -1093,
 	WL_FTM_E_PHY_CSI_FATAL_ERR	= -1092,
 	WL_FTM_E_FORCE_DELETED		= -1091,
 	WL_FTM_E_ONE_WAY_RTT		= -1090,
@@ -317,7 +321,8 @@ typedef int32 wl_ftm_status_t;
 #ifdef BCMUTILS_ERR_CODES
 /* begin proxd codes compatible w/ ftm above - obsolete  DO NOT extend */
 enum {
-	WL_PROXD_E_LAST			= -1058,
+	WL_PROXD_E_LAST			= -1059,
+	WL_PROXD_E_CHANSW		= -1059,
 	WL_PROXD_E_PKTFREED		= -1058,
 	WL_PROXD_E_ASSOC_INPROG		= -1057,
 	WL_PROXD_E_NOAVAIL		= -1056,

@@ -3362,8 +3362,7 @@ typedef struct wlc_btc_shared_stats_v2 {
 	uint8	debug_09;
 } wlc_btc_shared_stats_v2_t;
 
-#define BTCX_STATS_PHY_LOGGING_VER255 255u
-typedef struct wlc_btc_shared_stats_v255 {
+typedef struct wlc_btc_shared_stats_v3 {
 	uint32 bt_req_cnt;		/* #BT antenna requests since last stats sampl */
 	uint32 bt_gnt_cnt;		/* #BT antenna grants since last stats sample */
 	uint32 bt_gnt_dur;		/* usec BT owns antenna since last stats sample */
@@ -3381,6 +3380,65 @@ typedef struct wlc_btc_shared_stats_v255 {
 	uint16 antgrant_ge60ms;		/* Ant grant duration cnt 60~ms */
 	uint16 ackpwroffset;		/* CoreMask (low8) and ack_pwr_offset (high8) */
 	uint8 prisel_ant_mask;		/* antenna to be used by BT */
+	uint8 pad;
+	uint16 btc_susp_dur;		/* MAC core sleep time, ms */
+	uint16 btc_slp_dur;		/* MAC core sleep time, ms */
+	uint16 bt_pm_attempt_noack_cnt; /* PM1 packets that not acked by peer */
+} wlc_btc_shared_stats_v3_t;
+
+typedef struct wlc_btc_shared_stats_v4 {
+	uint32 bt_req_cnt;			/* #BT antenna requests since last stats sampl */
+	uint32 bt_gnt_cnt;			/* #BT antenna grants since last stats sample */
+	uint32 bt_gnt_dur;			/* usec BT owns antenna since last stats sample */
+	uint16 bt_pm_attempt_cnt;		/* PM1 attempts */
+	uint16 bt_succ_pm_protect_cnt;		/* successful PM protection */
+	uint16 bt_succ_cts_cnt;			/* successful CTS2A protection */
+	uint16 bt_wlan_tx_preempt_cnt;		/* WLAN TX Preemption */
+	uint16 bt_wlan_rx_preempt_cnt;		/* WLAN RX Preemption */
+	uint16 bt_ap_tx_after_pm_cnt;		/* AP TX even after PM protection */
+	uint16 bt_crtpri_cnt;			/* Ant grant by critical BT task */
+	uint16 bt_pri_cnt;			/* Ant grant by high BT task */
+	uint16 ackpwroffset;			/* CoreMask (low8) and ack_pwr_offset (high8) */
+	uint8 prisel_ant_mask;			/* antenna to be used by BT */
+	uint8 debug_00;
+	uint16 btc_susp_dur;			/* MAC core sleep time, ms */
+	uint16 btc_slp_dur;			/* MAC core sleep time, ms */
+	uint16 bt_pm_attempt_noack_cnt;		/* PM1 packets that not acked by peer */
+	uint16 bt5g_defer_cnt;			/* BT 5G Coex Defer Count */
+	uint32 bt5g_defer_max_switch_dur;	/* BT 5G Coex Defer Max Switch Dur */
+	uint32 bt5g_no_defer_max_switch_dur;	/* BT 5G Coex No Defer Max Switch Dur */
+	uint16 bt5g_switch_succ_cnt;		/* BT 5G Coex Switch Succ Cnt */
+	uint16 bt5g_switch_fail_cnt;		/* BT 5G Coex Switch Fail Cnt */
+	uint16 bt5g_no_defer_cnt;		/* BT 5G Coex No Defer Count */
+	uint16 bt5g_switch_reason_bm;		/* BT 5G Switch Reason Bitmap */
+} wlc_btc_shared_stats_v4_t;
+
+#define BTCX_STATS_PHY_LOGGING_VER255 255u
+typedef struct wlc_btc_shared_stats_v255 {
+	uint32 bt_req_cnt;			/* #BT antenna requests since last stats sampl */
+	uint32 bt_gnt_cnt;			/* #BT antenna grants since last stats sample */
+	uint32 bt_gnt_dur;			/* usec BT owns antenna since last stats sample */
+	uint16 bt_pm_attempt_cnt;		/* PM1 attempts */
+	uint16 bt_succ_pm_protect_cnt;		/* successful PM protection */
+	uint16 bt_succ_cts_cnt;			/* successful CTS2A protection */
+	uint16 bt_wlan_tx_preempt_cnt;		/* WLAN TX Preemption */
+	uint16 bt_wlan_rx_preempt_cnt;		/* WLAN RX Preemption */
+	uint16 bt_ap_tx_after_pm_cnt;		/* AP TX even after PM protection */
+	uint16 bt_crtpri_cnt;			/* Ant grant by critical BT task */
+	uint16 bt_pri_cnt;			/* Ant grant by high BT task */
+	uint16 ackpwroffset;			/* CoreMask (low8) and ack_pwr_offset (high8) */
+	uint8 prisel_ant_mask;			/* antenna to be used by BT */
+	uint8 debug_00;
+	uint16 btc_susp_dur;			/* MAC core sleep time, ms */
+	uint16 btc_slp_dur;			/* MAC core sleep time, ms */
+	uint16 bt_pm_attempt_noack_cnt;		/* PM1 packets that not acked by peer */
+	uint16 bt5g_defer_cnt;			/* BT 5G Coex Defer Count */
+	uint32 bt5g_defer_max_switch_dur;	/* BT 5G Coex Defer Max Switch Dur */
+	uint32 bt5g_no_defer_max_switch_dur;	/* BT 5G Coex No Defer Max Switch Dur */
+	uint16 bt5g_switch_succ_cnt;		/* BT 5G Coex Switch Succ Cnt */
+	uint16 bt5g_switch_fail_cnt;		/* BT 5G Coex Switch Fail Cnt */
+	uint16 bt5g_no_defer_cnt;		/* BT 5G Coex No Defer Count */
+	uint16 bt5g_switch_reason_bm;		/* BT 5G Switch Reason Bitmap */
 
 	/* Misc general purpose debug counters (will be used for future debugging) */
 	uint8	debug_01;
@@ -3413,11 +3471,45 @@ typedef struct wlc_btc_stats_phy_logging_v2 {
 } phy_periodic_btc_stats_v2_t;
 
 /* BTCX Statistics for PHY Logging */
+typedef struct wlc_btc_stats_phy_logging_v3 {
+	uint16 ver;
+	uint16 length;
+	uint32 btc_status;		/* btc status log */
+	uint32 btc_status2;		/* BT coex status 2 */
+	uint32 bt_req_type_map;		/* BT Antenna Req types since last stats sample */
+	int8 btcx_desense_mode;		/* btcoex desense mode, 0 - 7 */
+	int8 btrssi;			/* the snapshot of bt rssi */
+	int8 profile_2g_active;		/* 2G active profile index */
+	int8 profile_5g_active;		/* 5G active profile index */
+	wlc_btc_shared_stats_v3_t shared;
+} phy_periodic_btc_stats_v3_t;
+
+typedef struct wlc_btc_stats_phy_logging_v4 {
+	uint16 ver;
+	uint16 length;
+	uint32 btc_status;		/* btc status log */
+	uint32 btc_status2;		/* BT coex status 2 */
+	uint32 bt_req_type_map;		/* BT Antenna Req types since last stats sample */
+	int8 btcx_desense_mode;		/* btcoex desense mode, 0 - 7 */
+	int8 btrssi;			/* the snapshot of bt rssi */
+	int8 profile_2g_active;		/* 2G active profile index */
+	int8 profile_5g_active;		/* 5G active profile index */
+	uint32 bt5g_status;		/* BT 5G Coex Status */
+	wlc_btc_shared_stats_v4_t shared;
+} phy_periodic_btc_stats_v4_t;
+
+/* BTCX Statistics for PHY Logging */
 typedef struct wlc_btc_stats_phy_logging_v255 {
 	uint16 ver;
 	uint16 length;
 	uint32 btc_status;		/* btc status log */
+	uint32 btc_status2;		/* BT coex status 2 */
 	uint32 bt_req_type_map;		/* BT Antenna Req types since last stats sample */
+	int8 btcx_desense_mode;		/* btcoex desense mode, 0 - 7 */
+	int8 btrssi;			/* the snapshot of bt rssi */
+	int8 profile_2g_active;		/* 2G active profile index */
+	int8 profile_5g_active;		/* 5G active profile index */
+	uint32 bt5g_status;		/* BT 5G Coex Status */
 	wlc_btc_shared_stats_v255_t shared;
 } phy_periodic_btc_stats_v255_t;
 
