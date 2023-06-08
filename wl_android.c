@@ -5359,7 +5359,16 @@ int wl_android_wifi_on(struct net_device *dev)
 			/* Set big hammer flag */
 			dhdp->do_chip_bighammer = TRUE;
 #ifdef BCMPCIE
+			/* if error during power on was NORESOURCE
+			 * do not collect debug_dump for any errors
+			 * seen during power off, because NORESOURCE
+			 * means dhd_prot_init has not yet occured
+			 * and dhd_log_dump will try to fire iovars
+			 * to flush FW logs
+			 */
+			dhdp->skip_logdmp = TRUE;
 			dhd_net_bus_devreset(dev, TRUE);
+			dhdp->skip_logdmp = FALSE;
 #endif /* BCMPCIE */
 
 			dhd_net_wifi_platform_set_power(dev, FALSE, WIFI_TURNOFF_DELAY);
@@ -5541,9 +5550,17 @@ wbrc2wl_wlan_on_request(void *dhd_pub)
 		dhd_net_wifi_platform_set_power(dev, TRUE, WIFI_TURNON_DELAY);
 		ret = dhd_net_bus_devreset(dev, FALSE);
 		if (!ret) {
-			/* Keep the link in L2 */
-			DHD_PRINT(("%s: calling suspend\n", __FUNCTION__));
-			dhd_net_bus_suspend(dev);
+			uint32 val = 0;
+			/* Make wl up, so that minresmask is programmed */
+			DHD_PRINT(("%s: calling wl up\n", __FUNCTION__));
+			ret = wldev_ioctl_set(dev, WLC_UP, &val, sizeof(val));
+			if (unlikely(ret)) {
+				DHD_ERROR(("WLC_UP error (%d)\n", ret));
+			} else {
+				/* Keep the link in L2 */
+				DHD_PRINT(("%s: calling suspend\n", __FUNCTION__));
+				dhd_net_bus_suspend(dev);
+			}
 			g_wifi_on = TRUE;
 		} else {
 			/* if wlan on fails, turn it off to keep it in a sane state */
