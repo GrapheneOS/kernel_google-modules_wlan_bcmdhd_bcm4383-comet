@@ -902,6 +902,7 @@ xor_128bit_block(const uint8 *src1, const uint8 *src2, uint8 *dst)
 /* crc */
 uint8 hndcrc8(const uint8 *p, uint nbytes, uint8 crc);
 uint16 hndcrc16(const uint8 *p, uint nbytes, uint16 crc);
+uint16 hndcrc16ansi(const uint8 *p, uint nbytes, uint16 crc);
 uint32 hndcrc32(const uint8 *p, uint nbytes, uint32 crc);
 
 /* format/print */

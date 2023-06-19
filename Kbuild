@@ -353,6 +353,8 @@ ifneq ($(CONFIG_SOC_GOOGLE),)
         DHDCFLAGS += -DDHD_RECOVER_TIMEOUT
         # PCIE CPL TIMEOUT WAR
 	DHDCFLAGS += -DDHD_TREAT_D3ACKTO_AS_LINKDWN
+	# Skip coredump for certain health check traps
+	DHDCFLAGS += -DDHD_SKIP_COREDUMP_ON_HC
 endif
 endif
 
@@ -976,7 +978,7 @@ else ifneq ($(CONFIG_ARCH_HISI),)
         DHDCFLAGS += -DDHD_IOVAR_LOG_FILTER_DUMP
 	DHDCFLAGS += -DDHD_CAP_PLATFORM="\"hikey \""
         # Dongle init fail
-	DHDCFLAGS += -DPOWERUP_MAX_RETRY=3
+	DHDCFLAGS += -DPOWERUP_MAX_RETRY=0
 	DHDCFLAGS := $(filter-out -DSIMPLE_MAC_PRINT ,$(DHDCFLAGS))
 endif
 

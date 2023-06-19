@@ -139,8 +139,9 @@ typedef int bcmerror_t;
 #define BCME_6G_NO_TPE			-80	/* TPE for a 6G channel does not exist */
 #define BCME_PLL_RCCAL_FAIL		-81	/* RCCAL failed: SCAN_LPF / PLL */
 #define BCME_BT_RCCAL_FAIL		-82	/* RCCAL failed: BT caps */
+#define BCME_PHYMUTE			-83	/* PHY MUTED */
 
-#define BCME_LAST			BCME_BT_RCCAL_FAIL /* add new one above and update this */
+#define BCME_LAST			BCME_PHYMUTE /* add new one above and update this */
 
 /* This error code is *internal* to the driver, and is not propogated to users. It should
  * only be used by IOCTL patch handlers as an indication that it did not handle the IOCTL.
@@ -237,12 +238,13 @@ typedef int bcmerror_t;
 	"tpe for 6g channel(s) does not exist", \
 	"PLL RC Cal failed",		\
 	"BT RC Cal failure",		\
+	"Phy muted",			\
 }
 
 /* FTM error codes [-1024, -2047] */
 enum {
 	WL_FTM_E_LAST			= -1094,
-	WL_FTM_E_CHANSW			= -1094,
+	WL_FTM_E_SUPPRESS		= -1094,
 	WL_FTM_E_NO_CSI_DATA		= -1093,
 	WL_FTM_E_PHY_CSI_FATAL_ERR	= -1092,
 	WL_FTM_E_FORCE_DELETED		= -1091,

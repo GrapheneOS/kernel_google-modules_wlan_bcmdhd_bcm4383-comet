@@ -48,7 +48,6 @@
 #include <bcmutils.h>
 #include <bcmendian.h>
 #include <bcmtlv.h>
-#include <dnglioctl.h>
 #include <wlioctl.h>
 #include <bcmstdlib_s.h>
 
@@ -126,6 +125,7 @@ static const capext_bitpos_to_string_map_t capext_pktlat_subfeature_map[] = {
  * Insert new entries in the array below in sorted order of output string to be printed
  */
 static const capext_bitpos_to_string_map_t capext_rte_features_subfeature_map[] = {
+	CAPEXT_SUBFEATURE_MAP(CAPEXT_RTE_FEATURE_BITPOS_CST, "cst"),
 	CAPEXT_SUBFEATURE_MAP(CAPEXT_RTE_FEATURE_BITPOS_ECOUNTERS, "ecounters"),
 	CAPEXT_SUBFEATURE_MAP(CAPEXT_RTE_FEATURE_BITPOS_ETD, "etd_info"),
 	CAPEXT_SUBFEATURE_MAP(CAPEXT_RTE_FEATURE_BITPOS_EVENT_LOG, "event_log"),
@@ -217,23 +217,23 @@ static const capext_bitpos_to_string_map_t capext_fbt_subfeature_map[] = {
  * Insert new entries in the array below in sorted order of output string to be printed
  */
 static const capext_bitpos_to_string_map_t capext_wl_features_subfeature_map[] = {
+	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_11AZ, "11az"),
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_160MHZ_SUPPORT, "160"),
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_6G, "6g"),
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_802_11d, "802.11d"),
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_802_11h, "802.11h"),
-	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_AMPDU, "ampdu"),
 
+	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_AMPDU, "ampdu"),
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_AMSDU, "amsdu"),
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_ANQPO, "anqpo"),
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_AP, "ap"),
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_APF, "apf"),
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_ARB, "arb"),
-
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_ARPOE, "arpoe"),
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_AVOID_BSSID, "avoid-bssid"),
+
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_BCMDCS, "bcmdcs"),
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_BCNPROT, "bcnprot"),
-
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_BCNTRIM, "bcntrim"),
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_BDO, "bdo"),
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_BGDFS, "bgdfs"),
@@ -319,6 +319,7 @@ static const capext_bitpos_to_string_map_t capext_wl_features_subfeature_map[] =
 	"probresp_mac_filter"),
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_PROP_TXSTATUS, "proptxstatus"),
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_PROXD, "proxd"),
+	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_PRUNE_WPA, "prune_wpa"),
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_PS_PRETEND, "pspretend"),
 
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_PSBW, "psbw"),
@@ -519,9 +520,10 @@ bcmcapext_parse_output(void *bufptr,  uint16 maxlen, char *outbuf, uint16 outbuf
 		return BCME_BADARG;
 	}
 
-	if (ltoh16(capext->version) != CAPEXT_INFO_VERSION) {
+	if (ltoh16(capext->version) != CAPEXT_INFO_VERSION_1) {
 		return BCME_VERSION;
 	}
+
 	payload_len = ltoh16(capext->datalen);
 
 	if (payload_len > maxlen) {
