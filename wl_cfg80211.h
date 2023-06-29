@@ -1039,7 +1039,8 @@ enum wl_status {
 	WL_STATUS_NESTED_CONNECT,
 	WL_STATUS_CFG80211_CONNECT,
 	WL_STATUS_AUTHORIZED,
-	WL_STATUS_ROAMING
+	WL_STATUS_ROAMING,
+	WL_STATUS_CSA_ACTIVE
 };
 
 #ifdef WL_MLO
@@ -1087,6 +1088,12 @@ enum wl_mode {
 	WL_MODE_MAX
 };
 
+typedef enum wl_prof_assoc_status {
+	WL_PROF_ASSOC_SUCCESS,
+	WL_PROF_ASSOC_FAIL,
+	WL_PROF_ASSOC_4WAY_FAIL
+} wl_prof_assoc_status_t;
+
 /* driver profile list */
 enum wl_prof_list {
 	WL_PROF_MODE,
@@ -1099,7 +1106,8 @@ enum wl_prof_list {
 	WL_PROF_ACT,
 	WL_PROF_BEACONINT,
 	WL_PROF_DTIMPERIOD,
-	WL_PROF_LATEST_BSSID
+	WL_PROF_LATEST_BSSID,
+	WL_PROF_ASSOC_STATUS
 };
 
 /* donlge escan state */
@@ -1282,6 +1290,7 @@ struct wl_profile {
 	u32 mode;
 	s32 band;
 	u32 channel;
+	u32 assoc_status;
 	struct wlc_ssid ssid;
 	struct wl_security sec;
 	struct wl_ibss ibss;
@@ -1325,8 +1334,8 @@ enum wl_mlo_link_update {
 	LINK_UPDATE_ROAM_FAIL
 };
 
-#ifdef WL_MLO
 #define NON_ML_LINK 0xFFu
+#ifdef WL_MLO
 #define WL_ASSOC_LINK_IDX 0u
 typedef struct wl_mlo_link {
 	u8 link_id;
@@ -3448,9 +3457,9 @@ extern s32 wl_cfg80211_pause_sdo(struct net_device *dev, struct bcm_cfg80211 *cf
 extern s32 wl_cfg80211_resume_sdo(struct net_device *dev, struct bcm_cfg80211 *cfg);
 
 #endif
+#define CHANINFO_LIST_BUF_SIZE     (1024 * 4)
 #ifdef WL_SUPPORT_AUTO_CHANNEL
 #define CHANSPEC_BUF_SIZE	2048
-#define CHANINFO_LIST_BUF_SIZE     (1024 * 4)
 #define CHAN_SEL_IOCTL_DELAY	300
 #define CHAN_SEL_RETRY_COUNT	15
 #define CHANNEL_IS_RADAR(channel)	(((channel & WL_CHAN_RADAR) || \
@@ -3947,7 +3956,7 @@ extern s32 wl_cfg80211_ml_link_add(struct bcm_cfg80211 *cfg, struct wireless_dev
 	const wl_event_msg_t *e, void *data);
 extern s32 _wl_cfg80211_ml_link_add(struct bcm_cfg80211 *cfg, struct net_info *mld_netinfo,
 		void *data);
-extern wl_mlo_link_t *wl_cfg80211_get_ml_linkinfo_by_index(struct bcm_cfg80211 *cfg,
+extern wl_mlo_link_t *wl_cfg80211_get_ml_linkinfo_by_linkid(struct bcm_cfg80211 *cfg,
 		struct net_info *mld_netinfo, u8 index);
 
 #ifdef WL_BSS_STA_INFO

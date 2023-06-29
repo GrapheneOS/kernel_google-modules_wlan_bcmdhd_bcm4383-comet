@@ -302,8 +302,7 @@ dhd_set_platform_ext_name(char *hw_rev, char* hw_sku)
 	}
 
 #ifdef USE_CID_CHECK
-	if (BCMPCI_NOOTP_DEV_ID != 0x4383)
-		setbit(&platform_hw_info.avail_bmap, NO_EXT_NAME);
+	setbit(&platform_hw_info.avail_bmap, NO_EXT_NAME);
 #endif /* USE_CID_CHECK */
 
 	return;

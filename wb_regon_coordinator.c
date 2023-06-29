@@ -383,6 +383,12 @@ wbrc_bt_dev_open(struct inode *inodep, struct file *filep)
 		return -EFAULT;
 	}
 
+	if (!wbrc_data->wl_hdl) {
+		pr_err("%s: wl not inited !\n", __func__);
+		WBRC_UNLOCK(wbrc_mutex);
+		return -EFAULT;
+	}
+
 	if (wbrc_data->bt_dev_opened) {
 		pr_err("%s already opened\n", __func__);
 		WBRC_UNLOCK(wbrc_mutex);
