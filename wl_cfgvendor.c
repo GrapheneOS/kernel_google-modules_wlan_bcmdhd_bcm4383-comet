@@ -12557,6 +12557,7 @@ static int wl_cfgvendor_get_usable_channels_handler(struct bcm_cfg80211 *cfg,
 	u16 sta_band;
 	wl_chan_info_t chan_array[WLC_BAND_6G + 1];
 	u32 chspec_band = 0;
+	struct wireless_dev *wdev;
 
 	bzero(u_info->channels, sizeof(*u_info->channels) * u_info->max_size);
 	/* Get chan_info_list or chanspec from FW */
@@ -12596,9 +12597,9 @@ static int wl_cfgvendor_get_usable_channels_handler(struct bcm_cfg80211 *cfg,
 		WL_DBG(("STA CONNECTED case \n"));
 		GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
 		for_each_ndev(cfg, iter, next) {
-			struct wireless_dev *wdev = iter->ndev->ieee80211_ptr;
-			if (iter->ndev && IS_STA_IFACE(wdev) &&
+			if (iter->ndev && IS_STA_IFACE(iter->ndev->ieee80211_ptr) &&
 					(wl_get_drv_status(cfg, CONNECTED, iter->ndev))) {
+				wdev = iter->ndev->ieee80211_ptr;
 				netinfo = wl_get_netinfo_by_wdev(cfg, wdev);
 				if (netinfo && netinfo->mlinfo.num_links) {
 					for (i = 0; i < netinfo->mlinfo.num_links; i++) {
