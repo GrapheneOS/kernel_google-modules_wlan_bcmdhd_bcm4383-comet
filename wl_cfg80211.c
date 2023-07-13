@@ -9361,7 +9361,7 @@ wl_cfg80211_get_station(struct wiphy *wiphy, struct net_device *dev,
 			bzero(if_stats, WLC_IOCTL_MEDLEN);
 #ifdef BCMDONGLEHOST
 			if (FW_SUPPORTED(dhd, ifst)) {
-				err = wl_cfg80211_ifstats_counters(dev, 0, if_stats);
+				err = wl_cfg80211_ifstats_counters(dev, link_idx, if_stats);
 			} else
 #endif /* BCMDONGLEHOST */
 			{
@@ -16090,7 +16090,7 @@ static s32 wl_update_bss_info(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	s32 dtim_period;
 	size_t ie_len;
 	const u8 *ie;
-	const u8 *curbssid;
+	u8 *curbssid;
 	s32 err = 0;
 	struct wiphy *wiphy;
 	char *buf;
@@ -16117,17 +16117,20 @@ static s32 wl_update_bss_info(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		return BCME_NOMEM;
 	}
 
+	if (!target_bssid) {
 #ifdef WL_MLO
-	WL_CFG_NET_LIST_SYNC_LOCK(&cfg->net_list_sync, flags);
-	mld_netinfo = _wl_get_netinfo_by_wdev(cfg, ndev->ieee80211_ptr);
-	if (mld_netinfo && mld_netinfo->mlinfo.num_links) {
-		/* copy for local use */
-		(void)memcpy_s(&mlinfo, sizeof(mlinfo), &mld_netinfo->mlinfo, sizeof(mlinfo));
-		ml_conn = TRUE;
-		num_links = mld_netinfo->mlinfo.num_links;
-	}
-	WL_CFG_NET_LIST_SYNC_UNLOCK(&cfg->net_list_sync, flags);
+		WL_CFG_NET_LIST_SYNC_LOCK(&cfg->net_list_sync, flags);
+		mld_netinfo = _wl_get_netinfo_by_wdev(cfg, ndev->ieee80211_ptr);
+		if (mld_netinfo && mld_netinfo->mlinfo.num_links) {
+			/* copy for local use */
+			(void)memcpy_s(&mlinfo, sizeof(mlinfo),
+					&mld_netinfo->mlinfo, sizeof(mlinfo));
+			ml_conn = TRUE;
+			num_links = mld_netinfo->mlinfo.num_links;
+		}
+		WL_CFG_NET_LIST_SYNC_UNLOCK(&cfg->net_list_sync, flags);
 #endif /* WL_MLO */
+	}
 
 	mutex_lock(&cfg->usr_sync);
 	for (index = 0; index < num_links; index++) {
@@ -16138,8 +16141,9 @@ static s32 wl_update_bss_info(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		 * instance as even FW does not have peer link addr populated.
 		 */
 		if (target_bssid) {
-			WL_INFORM_MEM(("Update bssinfo for target bssid\n"));
 			curbssid = target_bssid;
+			WL_INFORM_MEM(("Update bssinfo for target bssid " MACDBG "\n",
+				MAC2STRDBG(curbssid)));
 		} else if (ml_conn) {
 #ifdef WL_MLO
 			linkinfo = &mlinfo.links[index];
@@ -16169,7 +16173,8 @@ static s32 wl_update_bss_info(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		}
 		bi = (wl_bss_info_v109_t *)(buf + 4);
 		chspec = wl_chspec_driver_to_host(bi->chanspec);
-		WL_INFORM_MEM(("link_idx %d chanspec %x\n", link_idx, chspec));
+		WL_INFORM_MEM(("chanspec:0x%x\n band:%d chan:%d", chspec, CHSPEC_BAND(chspec),
+			wf_chspec_ctlchan(wl_chspec_driver_to_host(chspec))));
 		/* chanspec queried for ASSOCIATED BSSID needs to be valid */
 		if (!(target_bssid) && !wf_chspec_valid(chspec)) {
 			WL_ERR(("Invalid chanspec from get bss info %x\n", chspec));
@@ -16390,24 +16395,42 @@ wl_bss_roaming_done(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	mld_netinfo = wl_cfg80211_get_netinfo(cfg, e->ifidx, e->bsscfgidx);
 	if ((mld_netinfo) && (mld_netinfo->mlinfo.num_links)) {
 		for (i = 0; i < mld_netinfo->mlinfo.num_links; i++) {
-			roam_info.links[i].addr = mld_netinfo->mlinfo.links[i].link_addr;
-			roam_info.links[i].bssid = mld_netinfo->mlinfo.links[i].peer_link_addr;
-			roam_info.links[i].bss = CFG80211_GET_BSS(wiphy, NULL,
-				roam_info.links[i].bssid, ssid->SSID, ssid->SSID_len);
-			if (!roam_info.links[i].bss) {
-				WL_ERR(("null bss\n"));
+			wl_mlo_link_t *link = &mld_netinfo->mlinfo.links[i];
+			u8 link_id = link->link_id;
+
+			if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS) {
+				WL_ERR(("wrong value for link_id:%d\n", link_id));
 				return BCME_ERROR;
 			}
+			roam_info.links[link_id].addr = link->link_addr;
+			roam_info.links[link_id].bssid = link->peer_link_addr;
+			roam_info.links[link_id].bss = CFG80211_GET_BSS(wiphy, NULL,
+				roam_info.links[link_id].bssid, ssid->SSID, ssid->SSID_len);
+			if (!roam_info.links[link_id].bss) {
+				WL_ERR(("null bss for BSSID " MACDBG "\n", MAC2STRDBG((const u8*)(
+					&mld_netinfo->mlinfo.links[link_id].peer_link_addr))));
+				err = BCME_ERROR;
+				goto fail;
+			}
+			roam_info.valid_links |= BIT(link_id);
+			WL_INFORM_MEM(("peer_link_addr:" MACDBG " link_addr:" MACDBG "link_id:%d\n",
+				MAC2STRDBG((const u8*)(link->peer_link_addr)),
+				MAC2STRDBG((const u8*)(link->link_addr)), link_id));
 			freq = wl_channel_to_frequency(
-				wf_chspec_ctlchan(mld_netinfo->mlinfo.links[i].chspec),
-				CHSPEC_BAND(mld_netinfo->mlinfo.links[i].chspec));
+				wf_chspec_ctlchan(link->chspec), CHSPEC_BAND(link->chspec));
 			notify_channel = ieee80211_get_channel(wiphy, freq);
 			if (notify_channel == NULL) {
 				WL_ERR(("Invalid roam notify channel\n"));
 				err = BCME_BADCHAN;
 				goto fail;
 			}
-			roam_info.links[i].channel = notify_channel;
+			roam_info.links[link_id].channel = notify_channel;
+		}
+		if (roam_info.valid_links) {
+			roam_info.ap_mld_addr = mld_netinfo->mlinfo.peer_mld_addr;
+			WL_INFORM_MEM(("valid_links:0x%x ap_mld_addr:" MACDBG "\n",
+				roam_info.valid_links,
+				MAC2STRDBG((const u8*)(roam_info.ap_mld_addr))));
 		}
 	} else {
 		roam_info.links[0].addr = ndev->dev_addr;
@@ -19522,6 +19545,8 @@ static s32 wl_update_chan_param(struct net_device *dev, u32 cur_chspec, u32 chan
 		channel = chaninfo;
 	}
 
+	WL_TRACE(("channel:%d chaninfo:%x chspec:%x flags:%x\n",
+			cur_channel, channel, cur_chspec, band_chan->flags));
 	if (!err) {
 		if (channel & WL_CHAN_RADAR) {
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0))
@@ -19530,7 +19555,7 @@ static s32 wl_update_chan_param(struct net_device *dev, u32 cur_chspec, u32 chan
 #else
 			band_chan->flags |= IEEE80211_CHAN_RADAR;
 #endif
-			WL_DBG(("DFS channel:%d chaninfo:%x chspec:%x flags:%x\n",
+			WL_TRACE(("DFS channel:%d chaninfo:%x chspec:%x flags:%x\n",
 				cur_channel, channel, cur_chspec, band_chan->flags));
 			*dfs_radar_disabled = TRUE;
 		}
@@ -19544,7 +19569,7 @@ static s32 wl_update_chan_param(struct net_device *dev, u32 cur_chspec, u32 chan
 			band_chan->flags |= IEEE80211_CHAN_NO_IR;
 #endif /* USE_INDOOR_CHAN_FLAG */
 #endif /* LINUX_VER >= 5.4 */
-			WL_DBG(("indoor channel:%d chaninfo:%x chspec:%x flags:%x\n",
+			WL_TRACE(("indoor channel:%d chaninfo:%x chspec:%x flags:%x\n",
 				cur_channel, channel, cur_chspec, band_chan->flags));
 		}
 
@@ -19555,6 +19580,8 @@ static s32 wl_update_chan_param(struct net_device *dev, u32 cur_chspec, u32 chan
 #else
 			band_chan->flags |= IEEE80211_CHAN_NO_IR;
 #endif
+			WL_TRACE(("passive/restricted channel:%d chaninfo:%x chspec:%x flags:%x\n",
+				cur_channel, channel, cur_chspec, band_chan->flags));
 			}
 
 	} else if (err == BCME_UNSUPPORTED) {
@@ -25085,8 +25112,14 @@ wl_cfg80211_sup_event_handler(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgde
 		}
 
 		if (ndev->ieee80211_ptr->iftype == NL80211_IFTYPE_STATION) {
+#if defined(OEM_ANDROID) || defined(CUSTOMER_HW6)
 			CFG80211_PORT_AUTHORIZED(ndev, (const u8 *)curbssid, td_mode,
 				td_mode_len, GFP_KERNEL);
+#else
+			err = wl_cfgvendor_send_async_event(bcmcfg_to_wiphy(cfg), ndev,
+				BRCM_VENDOR_EVENT_PORT_AUTHORIZED, td_mode, td_mode_len);
+#endif /* OEM_ANDROID || CUSTOMER_HW6 */
+
 			wl_clr_drv_status(cfg, ROAMING, ndev);
 			CLR_TS(cfg, roam_start);
 			if (td_mode) {
@@ -26612,24 +26645,9 @@ wl_notify_start_auth(struct bcm_cfg80211 *cfg,
 		goto fail;
 	}
 
-#ifdef WL_MLO
-	if (cfg->mlo.supported && !ETHER_ISNULLADDR(e->addr.octet) &&
-			memcmp(evt_data->bssid.octet, e->addr.octet, ETH_ALEN)) {
-		/* For MLO cases, e->addr would carry MLD address and incase
-		 * MLD is different from link address, a bss entry needs to
-		 * be created so that the host accepts the SAE AUTH indication.
-		 * Without this WAR, host will ignore the event since MLD is not
-		 * known to host yet. This WAR to be removed once user space and
-		 * kernel is ML aware.
-		 */
-		WL_INFORM_MEM(("[MLO] Create MLD bss entry\n"));
-		wl_update_bss_info(cfg, ndev, false, evt_data->bssid.octet);
-	} else
-#endif /* WL_MLO */
-	if (wl_get_drv_status(cfg, CONNECTED, ndev)) {
-		/* Make sure bss_info is updated in roam case */
-		wl_update_bss_info(cfg, ndev, false, evt_data->bssid.octet);
-	}
+	WL_INFORM(("evt_data->addr: " MACDBG " e->addr: " MACDBG "\n",
+			MAC2STRDBG(evt_data->bssid.octet), MAC2STRDBG(e->addr.octet)));
+	wl_update_bss_info(cfg, ndev, false, evt_data->bssid.octet);
 
 	ext_auth_param.ssid.ssid_len = MIN(evt_data->ssid.SSID_len, DOT11_MAX_SSID_LEN);
 	if (ext_auth_param.ssid.ssid_len) {
@@ -26637,12 +26655,35 @@ wl_notify_start_auth(struct bcm_cfg80211 *cfg,
 			evt_data->ssid.SSID, ext_auth_param.ssid.ssid_len);
 	}
 
-	(void)memcpy_s(&ext_auth_param.bssid, ETHER_ADDR_LEN, &e->addr, ETHER_ADDR_LEN);
+	/*
+	 * For MLO cases, e->addr would carry MLD address and incase
+	 * MLD is different from link address, a bss entry needs to
+	 * be created for non-ml aware kernels so that the host accepts
+	 * the SAE AUTH indication. Without this WAR, host will ignore
+	 * the event since MLD is unknown to host yet.
+	 */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)) || defined(WL_EXT_AUTH_BKPORT)
+	(void)memcpy_s(&ext_auth_param.mld_addr, ETHER_ADDR_LEN, e->addr.octet, ETHER_ADDR_LEN);
+	(void)memcpy_s(&ext_auth_param.bssid,
+			ETHER_ADDR_LEN, evt_data->bssid.octet, ETHER_ADDR_LEN);
+#else
+	/* In non-ml aware kernels, use MLD address for auth ind for SAE PMK calc. */
+	(void)memcpy_s(&ext_auth_param.bssid, ETHER_ADDR_LEN, e->addr.octet, ETHER_ADDR_LEN);
+	if (cfg->mlo.supported && !ETHER_ISNULLADDR(e->addr.octet) &&
+			memcmp(evt_data->bssid.octet, e->addr.octet, ETH_ALEN)) {
+		/* report MLD address based bss for non ML aware external auth kernel I/F */
+		if (wl_cfgvif_clone_bss_info(cfg, ndev,
+			evt_data->bssid.octet, e->addr.octet)) {
+			WL_ERR(("cfg80211_bss_info clone failed\n"));
+			/* fall through to attemp connection anyway */
+		}
+	}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)) || defined(WL_EXT_AUTH_BKPORT) */
 	ext_auth_param.action = NL80211_EXTERNAL_AUTH_START;
 	ext_auth_param.key_mgmt_suite = ntoh32(WLAN_AKM_SUITE_SAE_SHA256);
 
 	WL_INFORM_MEM(("call cfg80211_external_auth_request, BSSID:"MACDBG"\n",
-		MAC2STRDBG(&e->addr)));
+		MAC2STRDBG(&ext_auth_param.bssid)));
 
 	wl_cfg80211_wdev_lock(wdev);
 	err = cfg80211_external_auth_request(ndev, &ext_auth_param, GFP_KERNEL);

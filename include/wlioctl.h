@@ -5403,6 +5403,39 @@ typedef struct wl_he_omi_cnt_wlc_v1 {
 	uint32 he_omitx_dlmursdrec_ack;	/* count for Resound recommendation req txed successfully */
 } wl_he_omi_cnt_wlc_v1_t;
 
+typedef struct wl_he_omi_cnt_v2 {
+	uint16 len;
+	uint8  link_idx;
+	uint8  PAD;
+	uint32 he_omitx_sched;          /* Count for total number of OMIs scheduled */
+	uint32 he_omitx_success;        /* Count for OMI Tx success */
+	uint32 he_omitx_retries;        /* Count for OMI retries as TxDone not set */
+	uint32 he_omitx_dur;            /* Accumulated duration of OMI completion time */
+	uint32 he_omitx_ulmucfg;        /* count for UL MU enable/disable change req */
+	uint32 he_omitx_ulmucfg_ack;    /* count for UL MU enable/disable req txed successfully */
+	uint32 he_omitx_txnsts;         /* count for Txnsts change req */
+	uint32 he_omitx_txnsts_ack;     /* count for Txnsts change req txed successfully */
+	uint32 he_omitx_rxnss;          /* count for Rxnss change req */
+	uint32 he_omitx_rxnss_ack;      /* count for Rxnss change req txed successfully */
+	uint32 he_omitx_bw;             /* count for BW change req */
+	uint32 he_omitx_bw_ack;         /* count for BW change req txed successfully */
+	uint32 he_omitx_ersudis;        /* count for ER SU enable/disable req */
+	uint32 he_omitx_ersudis_ack;    /* count for ER SU enable/disable req txed successfully */
+	uint32 he_omitx_dlmursdrec;	/* count for Resound recommendation change req */
+	uint32 he_omitx_dlmursdrec_ack;	/* count for Resound recommendation req txed successfully */
+} wl_he_omi_cnt_v2_t;
+
+/* he omi counters Version 2 */
+#define HE_OMI_COUNTERS_V2		(2u)
+typedef struct wl_he_omi_cnt_wlc_v2 {
+	uint16	version;
+	uint16	len;
+	uint8	num_links;	/* Number of links supported on slice */
+	uint8	pad[3];
+	/* Per ML Link OMI counters */
+	wl_he_omi_cnt_v2_t counters[];
+} wl_he_omi_cnt_wlc_v2_t;
+
 typedef struct wlc_dyn_bw_cnt_v1 {
 	uint32 dyn_bw_tx_rts20_cnt;
 	uint32 dyn_bw_tx_rts40_cnt;
@@ -26782,6 +26815,32 @@ typedef union sssr_reg_info {
 	sssr_reg_info_v4_t rev4;
 	sssr_reg_info_v5_t rev5;
 } sssr_reg_info_cmn_t;
+
+typedef struct sssr_header {
+	uint32 magic; /* should be 53535352 = 'SSSR' */
+	uint16 header_version; /* version number of this SSSR header */
+	uint16 sr_version; /* version of SR version. This is to differentiate changes in SR ASM. */
+	/*
+	 * Header length from the next field ?data_len? and upto the start of
+	 * binary_data[]. This is 20 bytes for version 0
+	 */
+	uint32 header_len;
+	uint32 data_len;  /* number of bytes in binary_data[] */
+	uint16 chipid;     /* chipid */
+	uint16 chiprev;    /* chiprev */
+	/*
+	 * For D11 MAC/sAQM cores, the coreid, coreunit &  WAR_signature in the dump belong
+	 * to respective cores. For the DIG SSSR dump these fields are extracted from the ARM core.
+	 */
+	uint16 coreid;
+	uint16 coreunit;
+
+	uint32 war_reg; /* Value of WAR register */
+	uint32 flags;	/* For future use */
+
+	uint8  binary_data[];
+} sssr_header_t;
+#define SSSR_HEADER_MAGIC 0x53535352u /* SSSR */
 
 /* ADaptive Power Save(ADPS) structure definition */
 #define WL_ADPS_IOV_MAJOR_VER	1

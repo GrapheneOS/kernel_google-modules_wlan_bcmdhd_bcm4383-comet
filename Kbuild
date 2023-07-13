@@ -28,9 +28,6 @@ ifeq ($(KERNEL_SRC),)
   else
     BCMDHD_ROOT=$(srctree)/$(src)
   endif
-  $(warning : ** Regular in-tree build BCMDHD_ROOT=$(BCMDHD_ROOT)**)
-else
-  $(warning : ** out-of-tree Kbuild BCMDHD_ROOT=$(BCMDHD_ROOT)**)
 endif
 
 #####################
@@ -342,7 +339,7 @@ ifneq ($(CONFIG_SOC_GOOGLE),)
 	# Tx/Rx tasklet bounds
 	DHDCFLAGS += -DDHD_TX_CPL_BOUND=64
 	DHDCFLAGS += -DDHD_TX_POST_BOUND=128
-	DHDCFLAGS += -DDHD_RX_CPL_POST_BOUND=156
+	DHDCFLAGS += -DDHD_RX_CPL_POST_BOUND=96
 	DHDCFLAGS += -DDHD_CTRL_CPL_POST_BOUND=8
 	DHDCFLAGS += -DDHD_LB_TXBOUND=32
 	# Detect NON DMA M2M corruption (MFG only)
@@ -355,6 +352,8 @@ ifneq ($(CONFIG_SOC_GOOGLE),)
 	DHDCFLAGS += -DDHD_TREAT_D3ACKTO_AS_LINKDWN
 	# Skip coredump for certain health check traps
 	DHDCFLAGS += -DDHD_SKIP_COREDUMP_ON_HC
+	# Skip coredump for older chip revs
+	DHDCFLAGS += -DDHD_SKIP_COREDUMP_OLDER_CHIPS
 endif
 endif
 

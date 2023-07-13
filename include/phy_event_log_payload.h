@@ -1140,7 +1140,7 @@ typedef struct phy_periodic_counters_v12 {
 	uint16	bfe_txsf;		/* subframes */
 
 	uint16	txexptime;
-	uint16	tvpm_txdc_ofdm_ratio;
+	uint16	txdc;
 
 	/* Misc general purpose debug counters (will be used for future debugging) */
 	uint16	debug_01;
@@ -3142,10 +3142,13 @@ typedef struct phy_periodic_log_cmn_v14 {
 	uint8	dsa_status;
 	uint8	dsa_offset;
 
+	uint8	dsa_util[3];
+
 	/* Misc general purpose debug counters (will be used for future debugging) */
-	uint32	debug_01;
+	uint8	debug_01;
 	uint16	debug_02;
 	uint16	debug_03;
+	uint32	debug_04;
 } phy_periodic_log_cmn_v14_t;
 
 typedef struct phy_periodic_log_cmn_v255 {
@@ -3673,13 +3676,11 @@ typedef struct phy_periodic_log_core_v10 {
 	uint16	tpc_vmid;
 	uint8	tpc_av;
 
-	uint8	dsa_txdc;
-	uint8	dsa_util;
-
 	/* Misc general purpose debug counters (will be used for future debugging) */
 	uint8	debug_01;
 	uint16	debug_02;
-	uint32	debug_03;
+	uint16	debug_03;
+	uint32	debug_04;
 
 	int8	phy_noise_pwr_array[PHY_NOISE_PWR_ARRAY_SIZE];	/* noise buffer array */
 } phy_periodic_log_core_v10_t;
@@ -3822,10 +3823,10 @@ typedef struct wlc_btc_shared_stats_v3 {
 	uint16 bt_ap_tx_after_pm_cnt;	/* AP TX even after PM protection */
 	uint16 bt_crtpri_cnt;		/* Ant grant by critical BT task */
 	uint16 bt_pri_cnt;		/* Ant grant by high BT task */
-	uint16 antgrant_lt10ms;		/* Ant grant duration cnt 0~10ms */
-	uint16 antgrant_lt30ms;		/* Ant grant duration cnt 10~30ms */
-	uint16 antgrant_lt60ms;		/* Ant grant duration cnt 30~60ms */
-	uint16 antgrant_ge60ms;		/* Ant grant duration cnt 60~ms */
+	uint16 antgrant_lt10ms;		/* Ant grant dur. cnt 0~10ms, obsolete, not in v255 */
+	uint16 antgrant_lt30ms;		/* Ant grant dur. cnt 10~30ms, obsolete, not in v255 */
+	uint16 antgrant_lt60ms;		/* Ant grant dur. cnt 30~60ms, obsolete, not in v255 */
+	uint16 antgrant_ge60ms;		/* Ant grant dur. cnt 60~ms, obsolete, not in v255 */
 	uint16 ackpwroffset;		/* CoreMask (low8) and ack_pwr_offset (high8) */
 	uint8 prisel_ant_mask;		/* antenna to be used by BT */
 	uint8 pad;
@@ -3846,6 +3847,10 @@ typedef struct wlc_btc_shared_stats_v4 {
 	uint16 bt_ap_tx_after_pm_cnt;		/* AP TX even after PM protection */
 	uint16 bt_crtpri_cnt;			/* Ant grant by critical BT task */
 	uint16 bt_pri_cnt;			/* Ant grant by high BT task */
+	uint16 antgrant_lt10ms;			/* grant dur. cnt 0~10ms, obsolete, not in v255 */
+	uint16 antgrant_lt30ms;			/* grant dur. cnt 10~30ms, obsolete, not in v255 */
+	uint16 antgrant_lt60ms;			/* grant dur. cnt 30~60ms, obsolete, not in v255 */
+	uint16 antgrant_ge60ms;			/* grant dur. cnt 60~ms, obsolete, not in v255 */
 	uint16 ackpwroffset;			/* CoreMask (low8) and ack_pwr_offset (high8) */
 	uint8 prisel_ant_mask;			/* antenna to be used by BT */
 	uint8 debug_00;
@@ -3853,8 +3858,6 @@ typedef struct wlc_btc_shared_stats_v4 {
 	uint16 btc_slp_dur;			/* MAC core sleep time, ms */
 	uint16 bt_pm_attempt_noack_cnt;		/* PM1 packets that not acked by peer */
 	uint16 bt5g_defer_cnt;			/* BT 5G Coex Defer Count */
-	uint32 bt5g_defer_max_switch_dur;	/* BT 5G Coex Defer Max Switch Dur */
-	uint32 bt5g_no_defer_max_switch_dur;	/* BT 5G Coex No Defer Max Switch Dur */
 	uint16 bt5g_switch_succ_cnt;		/* BT 5G Coex Switch Succ Cnt */
 	uint16 bt5g_switch_fail_cnt;		/* BT 5G Coex Switch Fail Cnt */
 	uint16 bt5g_no_defer_cnt;		/* BT 5G Coex No Defer Count */

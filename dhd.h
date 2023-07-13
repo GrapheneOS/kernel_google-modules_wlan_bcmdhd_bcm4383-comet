@@ -197,6 +197,7 @@ enum dhd_bus_devreset_type {
 #define DHD_BUS_BUSY_IN_SYSFS_DUMP		0x80000
 #define DHD_BUS_BUSY_IN_PM_CALLBACK		0x100000
 #define DHD_BUS_BUSY_IN_BT_FW_DWNLD		0x200000
+#define DHD_BUS_BUSY_IN_SSSR			0x400000
 
 #define DHD_BUS_BUSY_SET_IN_TX(dhdp) \
 	(dhdp)->dhd_bus_busy_state |= DHD_BUS_BUSY_IN_TX
@@ -242,6 +243,8 @@ enum dhd_bus_devreset_type {
 	(dhdp)->dhd_bus_busy_state |= DHD_BUS_BUSY_IN_PM_CALLBACK
 #define DHD_BUS_BUSY_SET_IN_BT_FW_DWNLD(dhdp) \
 	(dhdp)->dhd_bus_busy_state |= DHD_BUS_BUSY_IN_BT_FW_DWNLD
+#define DHD_BUS_BUSY_SET_IN_SSSR(dhdp) \
+	(dhdp)->dhd_bus_busy_state |= DHD_BUS_BUSY_IN_SSSR
 
 #define DHD_BUS_BUSY_CLEAR_IN_TX(dhdp) \
 	(dhdp)->dhd_bus_busy_state &= ~DHD_BUS_BUSY_IN_TX
@@ -287,6 +290,8 @@ enum dhd_bus_devreset_type {
 	(dhdp)->dhd_bus_busy_state &= ~DHD_BUS_BUSY_IN_PM_CALLBACK
 #define DHD_BUS_BUSY_CLEAR_IN_BT_FW_DWNLD(dhdp) \
 	(dhdp)->dhd_bus_busy_state &= ~DHD_BUS_BUSY_IN_BT_FW_DWNLD
+#define DHD_BUS_BUSY_CLEAR_IN_SSSR(dhdp) \
+	(dhdp)->dhd_bus_busy_state &= ~DHD_BUS_BUSY_IN_SSSR
 
 #define DHD_BUS_BUSY_CHECK_IN_TX(dhdp) \
 	((dhdp)->dhd_bus_busy_state & DHD_BUS_BUSY_IN_TX)
@@ -328,6 +333,9 @@ enum dhd_bus_devreset_type {
 	((dhdp)->dhd_bus_busy_state & DHD_BUS_BUSY_IN_DUMP_DONGLE_MEM)
 #define DHD_BUS_BUSY_CHECK_IN_SYSFS_DUMP(dhdp) \
 	((dhdp)->dhd_bus_busy_state & DHD_BUS_BUSY_IN_SYSFS_DUMP)
+#define DHD_BUS_BUSY_CHECK_IN_SSSR(dhdp) \
+	((dhdp)->dhd_bus_busy_state & DHD_BUS_BUSY_IN_SSSR)
+
 #define DHD_BUS_BUSY_CHECK_IDLE(dhdp) \
 	((dhdp)->dhd_bus_busy_state == 0)
 
@@ -1847,6 +1855,7 @@ typedef struct dhd_pub {
 #ifdef EWP_EDL
 	bool dongle_edl_support;
 	dhd_dma_buf_t edl_ring_mem;
+	bool host_edl_mem_inited;
 #endif /* EWP_EDL */
 #if defined(__linux__)
 	struct mutex ndev_op_sync;
@@ -4217,6 +4226,7 @@ extern void dhd_schedule_macdbg_dump(dhd_pub_t *dhdp);
 #define SSSR_DUMP_MODE_SSSR	0	/* dump both *before* and *after* files */
 #define SSSR_DUMP_MODE_FIS	1	/* dump *after* files only */
 
+#ifndef SSSR_HEADER_MAGIC
 typedef struct sssr_header {
 	uint32 magic; /* should be 53535352 = 'SSSR' */
 	uint16 header_version; /* version number of this SSSR header */
@@ -4242,6 +4252,7 @@ typedef struct sssr_header {
 	uint8  binary_data[];
 } sssr_header_t;
 #define SSSR_HEADER_MAGIC 0x53535352u /* SSSR */
+#endif /* SSSR_HEADER_MAGIC */
 
 extern int dhd_sssr_mempool_init(dhd_pub_t *dhd);
 extern void dhd_sssr_mempool_deinit(dhd_pub_t *dhd);

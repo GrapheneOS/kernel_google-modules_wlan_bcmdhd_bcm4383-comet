@@ -1045,7 +1045,7 @@ wl_get_vif_macaddr(struct bcm_cfg80211 *cfg, u16 wl_iftype, u8 *mac_addr)
 		(void)memcpy_s(mac_addr, ETH_ALEN, p2p_dev_addr->octet, ETH_ALEN);
 		return BCME_OK;
 	}
-	(void)memcpy_s(mac_addr, ETH_ALEN, ndev->perm_addr, ETH_ALEN);
+	(void)memcpy_s(mac_addr, ETH_ALEN, ndev->dev_addr, ETH_ALEN);
 /*
  * VIF MAC address managment
  * P2P Device addres: Primary MAC with locally admin. bit set
@@ -1784,6 +1784,9 @@ wl_cfg80211_set_chan_mlo_concurrency(struct bcm_cfg80211 *cfg, struct net_info *
 			target_chspec =	wf_chspec_primary20_chspec(sta_chanspecs[WLC_BAND_6G]);
 			WL_DBG(("6G SCC case 0x%x\n", target_chspec));
 		}
+	} else if (CHSPEC_IS6G(ap_chspec) &&
+		!wl_is_5g_restricted(cfg, sta_chanspecs[WLC_BAND_5G])) {
+		target_chspec = wf_chspec_primary20_chspec(sta_chanspecs[WLC_BAND_5G]);
 	/* if STA dominant link is 5G and AP band is 5G link, attempt SCC */
 	} else if (CHSPEC_IS5G(sta_chanspecs[WLC_BAND_5G]) &&
 		wf_chspec_valid(sta_chanspecs[WLC_BAND_5G]) && CHSPEC_IS5G(ap_chspec)) {
@@ -1808,6 +1811,16 @@ wl_cfg80211_set_chan_mlo_concurrency(struct bcm_cfg80211 *cfg, struct net_info *
 		}
 	}
 
+	/* In case the incoming softAP channel is 6G/5G and fails SCC, due to restricted 6G/5G
+	 * STA links, its moved to attempt SCC with any existing 2G link, else default 2G channel
+	 */
+	if (!wf_chspec_valid(target_chspec)) {
+		if (!wl_is_2g_restricted(cfg, sta_chanspecs[WLC_BAND_2G])) {
+			target_chspec = wf_chspec_primary20_chspec(sta_chanspecs[WLC_BAND_2G]);
+		} else {
+			target_chspec = DEFAULT_2G_SOFTAP_CHANSPEC;
+		}
+	}
 	if (wf_chspec_valid(target_chspec)) {
 		WL_INFORM_MEM(("Target chanspec set to %x\n", target_chspec));
 	} else {
@@ -1854,7 +1867,6 @@ wl_get_lower_bw_chspec(chanspec_t *chspec)
 	return BCME_OK;
 }
 
-#define MAX_20MHZ_CHANNELS 16u
 static s32
 wl_get_overlapping_chspecs(chanspec_t sel_chspec,
 		wl_chanspec_attr_v1_t *overlap, u32 *arr_idx)
@@ -1911,7 +1923,7 @@ wl_get_overlapping_chspecs(chanspec_t sel_chspec,
 	return BCME_OK;
 }
 
-static s32
+s32
 wl_filter_restricted_subbands(struct bcm_cfg80211 *cfg,
 	struct net_device *dev, chanspec_t *cur_chspec)
 {
@@ -9027,6 +9039,200 @@ wl_cfgvif_prev_conn_fail(struct bcm_cfg80211 *cfg,
 		WL_DBG_MEM(("previous connection attempt to SSID failed (%d)\n",
 			*assoc_status));
 		return TRUE;
+	}
+	return FALSE;
+}
+
+s32
+wl_cfgvif_clone_bss_info(struct bcm_cfg80211 *cfg, struct net_device *ndev,
+	u8 *src_bssid, const u8 *target_bssid)
+{
+	struct cfg80211_bss *src_bss, *bss, *target_bss;
+	struct wiphy *wiphy;
+	s32 err = 0;
+	struct wlc_ssid *ssid;
+	u32 ftype;
+
+	wiphy = bcmcfg_to_wiphy(cfg);
+
+	if (!src_bssid || !target_bssid) {
+		WL_ERR(("invalid arg\n"));
+		return BCME_ERROR;
+	}
+
+	ssid = (struct wlc_ssid *)wl_read_prof(cfg, ndev, WL_PROF_SSID);
+	if (!ssid) {
+		WL_ERR(("connection ssid null\n"));
+		return BCME_ERROR;
+	}
+
+	target_bss = CFG80211_GET_BSS(wiphy, NULL, target_bssid,
+		NULL, 0);
+	if (target_bss) {
+		/* Entry already present for target bssid */
+		WL_INFORM(("target bss found for bssid" MACDBG "\n",
+				MAC2STRDBG(target_bssid)));
+		CFG80211_PUT_BSS(wiphy, target_bss);
+		return BCME_OK;
+	}
+
+	src_bss = CFG80211_GET_BSS(wiphy, NULL, (const u8*)src_bssid,
+		ssid->SSID, ssid->SSID_len);
+	if (!src_bss) {
+		WL_ERR(("No src bss found for bssid" MACDBG "\n",
+				MAC2STRDBG(src_bssid)));
+		return BCME_ERROR;
+	}
+
+
+	if (!src_bss->ies || !src_bss->ies->len) {
+		WL_ERR(("empty bss ies\n"));
+		err = BCME_NOMEM;
+		goto exit;
+	}
+
+	ftype = src_bss->proberesp_ies ?
+		CFG80211_BSS_FTYPE_PRESP : CFG80211_BSS_FTYPE_BEACON;
+
+	/* use same info to create a clone with the target bssid */
+	bss = cfg80211_inform_bss(wiphy, src_bss->channel,
+		ftype, target_bssid, src_bss->ies->tsf, src_bss->capability,
+		src_bss->beacon_interval, (const u8 *)src_bss->ies->data, src_bss->ies->len,
+		src_bss->signal, GFP_KERNEL);
+	if (!bss) {
+		WL_ERR(("cfg8011_inform_bss failed\n"));
+		err = BCME_NOMEM;
+		goto exit;
+	}
+	CFG80211_PUT_BSS(wiphy, bss);
+
+	WL_INFORM_MEM(("bss entry created for address:" MACDBG " freq:%d\n",
+		MAC2STRDBG(target_bssid), src_bss->channel->center_freq));
+exit:
+	CFG80211_PUT_BSS(wiphy, src_bss);
+	return err;
+}
+
+static u32
+wl_get_max_bw_for_band(u32 chspec_band)
+{
+	u32 bw;
+
+	if (chspec_band == WL_CHANSPEC_BAND_6G) {
+		bw = MAX_SAP_BW_6G;
+	} else if (chspec_band == WL_CHANSPEC_BAND_5G) {
+		bw = MAX_SAP_BW_5G;
+	} else {
+		bw = MAX_SAP_BW_2G;
+	}
+
+	return bw;
+}
+
+s32
+wl_cfgvif_get_ml_scc_channel_array(struct bcm_cfg80211 *cfg,
+	wl_chan_info_t *wl_chaninfo)
+{
+	int i, j;
+	u32 bw;
+	wl_chan_info_t *per_link_chan;
+	u32 wlc_band;
+	chanspec_t chanspec;
+	u16 list_count;
+	wl_chanspec_list_v1_t *list = NULL;
+	chanspec_t in_chspec;
+
+	for (i = 0; i < (WLC_BAND_6G + 1); i++) {
+		per_link_chan = &wl_chaninfo[i];
+		chanspec = per_link_chan->chspec;
+		if (!chanspec || (chanspec == 0xff)) {
+			WL_DBG(("no chanspec for wlc_band:%i\n", i));
+			continue;
+		}
+
+		wlc_band = CHSPEC_TO_WLC_BAND(CHSPEC_BAND(chanspec));
+		bw = wl_get_max_bw_for_band(CHSPEC_BAND(chanspec));
+
+		WL_DBG(("Fetching subchannels for chspec:%x band:%d\n",
+			chanspec, wlc_band));
+
+		if (wlc_band == WLC_BAND_2G) {
+			/* For 2G 20MHz, only single channel is present */
+			per_link_chan->array[0] = CHSPEC_CHANNEL(chanspec);
+			WL_ERR(("match fournd for 2g. channel:%d\n",
+				per_link_chan->array[0]));
+		} else {
+
+			/* for a given sta_chanspec, get max BW chanspec possible for AP */
+			if (wl_cfgscan_get_bw_chspec(&chanspec, bw) != BCME_OK) {
+				WL_ERR(("get_bw_chanspec failed. continuing for others\n"));
+				continue;
+			}
+			/* get subband channels into the array for later use */
+			wf_get_all_ext(chanspec, per_link_chan->array);
+		}
+
+		/* go through cache channel info and get matching chaninfo */
+		if (cfg->chan_info_list) {
+			list = (wl_chanspec_list_v1_t *)cfg->chan_info_list;
+			list_count = list->count;
+			if (((sizeof(wl_chanspec_attr_v1_t) * list_count) +
+					(sizeof(u16) * 2)) >= CHAN_LIST_BUF_LEN) {
+				WL_ERR(("exceeds buffer size:%d\n", list_count));
+				return -EINVAL;
+			}
+
+			for (j = 0; j < dtoh32(list_count); j++) {
+				in_chspec = (chanspec_t)dtoh32
+					(list->chspecs[j].chanspec);
+				if (wlc_band != CHSPEC_TO_WLC_BAND(CHSPEC_BAND(in_chspec))) {
+					continue;
+				}
+				if (in_chspec == chanspec) {
+					per_link_chan->chaninfo = dtoh32(list->chspecs[j].chaninfo);
+					WL_DBG(("chan_list match found chspec:%x chan_info:%x\n",
+						chanspec, per_link_chan->chaninfo));
+					break;
+				}
+			}
+		}
+	}
+
+	return BCME_OK;
+}
+
+bool
+wl_cfgvif_is_scc_valid(chanspec_t sta_chanspec, chanspec_t chspec, wl_chan_info_t *wl_chaninfo)
+{
+	u8 *chan_array;
+	s32 i;
+	u32 sta_band;
+
+	if (!wl_chaninfo) {
+		WL_ERR(("chaninfo detail null\n"));
+		return FALSE;
+	}
+
+	chan_array = wl_chaninfo->array;
+	if (CHSPEC_BAND(sta_chanspec) != CHSPEC_BAND(wl_chaninfo->chspec)) {
+		WL_TRACE(("chanspec:%x band mismatch %x vs %x\n",
+			sta_chanspec, CHSPEC_BAND(sta_chanspec), CHSPEC_BAND(wl_chaninfo->chspec)));
+		return FALSE;
+	}
+
+	sta_band = CHSPEC_TO_WLC_BAND(CHSPEC_BAND(sta_chanspec));
+	/* if channel is overlapping for the incoming chanspec */
+	for (i = 0; i < MAX_20MHZ_CHANNELS; i++) {
+
+		if (!chan_array[i]) {
+			break;
+		}
+
+		if (chan_array[i] == wf_chspec_ctlchan(chspec)) {
+			WL_DBG(("match found. channel:%d band:%d\n",
+				chan_array[i], sta_band));
+			return TRUE;
+		}
 	}
 	return FALSE;
 }

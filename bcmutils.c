@@ -1482,7 +1482,7 @@ BCMFASTPATH(wl_set_up_table)(uint8 *up_table, bcm_tlv_t *qos_map_ie)
 	}
 
 	/* clear table to check table was set or not */
-	memset(up_table, 0xff, UP_TABLE_MAX);
+	(void)memset_s(up_table, UP_TABLE_MAX, 0xff, UP_TABLE_MAX);
 
 	/* length of QoS Map IE must be 16+n*2, n is number of exceptions */
 	if (qos_map_ie != NULL && qos_map_ie->id == DOT11_MNG_QOS_MAP_ID &&
@@ -1503,7 +1503,7 @@ BCMFASTPATH(wl_set_up_table)(uint8 *up_table, bcm_tlv_t *qos_map_ie)
 
 			if (!up_table_set(up_table, i / 2, low, high)) {
 				/* clear the table on failure */
-				memset(up_table, 0xff, UP_TABLE_MAX);
+				(void)memset_s(up_table, UP_TABLE_MAX, 0xff, UP_TABLE_MAX);
 				return BCME_ERROR;
 			}
 		}
@@ -6413,7 +6413,10 @@ BCMATTACHFN(varbuf_append)(varbuf_t *b, const char *fmt, ...)
 		for (s = b->base; s < b->buf;) {
 			if ((memcmp(s, b->buf, len) == 0) && s[len] == '=') {
 				len = strlen(s) + 1;
-				memmove(s, (s + len), (size_t)((b->buf + r + 1) - (s + len)));
+				if (memmove_s(s, b->size - len,
+					(s + len), (size_t)((b->buf + r + 1) - (s + len)))) {
+					ASSERT(0);
+				}
 				b->buf -= len;
 				b->size += (unsigned int)len;
 				break;
