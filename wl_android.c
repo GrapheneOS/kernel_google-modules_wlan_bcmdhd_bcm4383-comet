@@ -5358,20 +5358,27 @@ int wl_android_wifi_on(struct net_device *dev)
 				__FUNCTION__, retry));
 			/* Set big hammer flag */
 			dhdp->do_chip_bighammer = TRUE;
-#ifdef BCMPCIE
-			/* if error during power on was NORESOURCE
-			 * do not collect debug_dump for any errors
-			 * seen during power off, because NORESOURCE
-			 * means dhd_prot_init has not yet occured
-			 * and dhd_log_dump will try to fire iovars
-			 * to flush FW logs
+			/*
+			 * If failed to power up wifi chip, dhd_open() which invoked this function
+			 * will invoke dhd_stop. As part of dhd_stop this clean-up will be handled.
+			 *
 			 */
-			dhdp->skip_logdmp = TRUE;
-			dhd_net_bus_devreset(dev, TRUE);
-			dhdp->skip_logdmp = FALSE;
+			if (retry != 0) {
+#ifdef BCMPCIE
+				/* if error during power on was NORESOURCE
+				 * do not collect debug_dump for any errors
+				 * seen during power off, because NORESOURCE
+				 * means dhd_prot_init has not yet occured
+				 * and dhd_log_dump will try to fire iovars
+				 * to flush FW logs
+				 */
+				dhdp->skip_logdmp = TRUE;
+				dhd_net_bus_devreset(dev, TRUE);
+				dhdp->skip_logdmp = FALSE;
 #endif /* BCMPCIE */
 
-			dhd_net_wifi_platform_set_power(dev, FALSE, WIFI_TURNOFF_DELAY);
+				dhd_net_wifi_platform_set_power(dev, FALSE, WIFI_TURNOFF_DELAY);
+			}
 		} while (retry-- > 0);
 		if (ret != 0) {
 			DHD_ERROR(("\nfailed to power up wifi chip, max retry reached **\n\n"));
@@ -15022,7 +15029,7 @@ wl_cfg80211_post_static_ifcreate(struct bcm_cfg80211 *cfg,
 		wdev = new_ndev->ieee80211_ptr;
 		ASSERT(wdev);
 		wdev->iftype = iface_type;
-		(void)memcpy_s(new_ndev->dev_addr, ETH_ALEN, addr, ETH_ALEN);
+		NETDEV_ADDR_SET(new_ndev, ETH_ALEN, addr, ETH_ALEN);
 	}
 
 	cfg->static_ndev_state = NDEV_STATE_FW_IF_CREATED;

@@ -968,10 +968,48 @@ static inline void do_gettimeofday(struct timeval *tv)
 }
 
 #define SETFS(fs) set_fs(fs)
+#define MM_SEGMENT_T mm_segment_t
 #else
 /* From 5.10 kernel get/set_fs are obsolete and direct kernel_read/write operations can be used */
 #define GETFS_AND_SETFS_TO_KERNEL_DS(fs) BCM_REFERENCE(fs)
 #define SETFS(fs) BCM_REFERENCE(fs)
+#define MM_SEGMENT_T void *
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0) */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0))
+#define NETDEV_ADDR_SET(net, dst_len, addr, src_len) \
+	__dev_addr_set(net, addr, dst_len)
+#else
+#define NETDEV_ADDR_SET(net, dst_len, addr, src_len) \
+	(void)memcpy_s(net->dev_addr, dst_len, addr, src_len)
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0) */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0))
+#define KTHREAD_COMPLETE_AND_EXIT(comp, code) kthread_complete_and_exit(comp, code)
+#else
+#define KTHREAD_COMPLETE_AND_EXIT(comp, code) complete_and_exit(comp, code)
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0) */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+#define DHD_DMA_FREE_COHERENT(pdev, size, va, paddr) \
+	dma_free_coherent(&((struct pci_dev *)pdev)->dev, size, va, paddr)
+#define DHD_DMA_SET_MASK(pdev, mask) \
+	dma_set_mask(&((struct pci_dev *)pdev)->dev, mask)
+#define DHD_DMA_SET_COHERENT_MASK(pdev, mask) \
+	dma_set_coherent_mask(&((struct pci_dev *)pdev)->dev, mask)
+#define DHD_DMA_MAPPING_ERROR(pdev, addr) \
+	dma_mapping_error(&((struct pci_dev *)pdev)->dev, addr)
+#define DHD_DMA_MAP_SINGLE(pdev, size, m_addr, dir) \
+	dma_map_single(&((struct pci_dev *)pdev)->dev, size, m_addr, dir)
+#define DHD_DMA_UNMAP_SINGLE(pdev, size, m_addr, dir) \
+	dma_unmap_single(&((struct pci_dev *)pdev)->dev, size, m_addr, dir)
+#else
+#define DHD_DMA_FREE_COHERENT(pdev, size, va, paddr)	pci_free_consistent(pdev, size, va, paddr)
+#define DHD_DMA_SET_MASK(pdev, mask)			pci_set_dma_mask(pdev, mask)
+#define DHD_DMA_SET_COHERENT_MASK(pdev, mask)		pci_set_consistent_dma_mask(pdev, mask)
+#define DHD_DMA_MAPPING_ERROR(pdev, addr)		pci_dma_mapping_error(pdev, addr)
+#define DHD_DMA_MAP_SINGLE(pdev, size, m_addr, dir)	pci_map_single(pdev, size, m_addr, dir)
+#define DHD_DMA_UNMAP_SINGLE(pdev, size, m_addr, dir)	pci_unmap_single(pdev, size, m_addr, dir)
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) */
 
 #endif /* _linuxver_h_ */

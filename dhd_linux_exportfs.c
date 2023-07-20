@@ -99,7 +99,9 @@ dhd_proc_open(struct inode *inode, struct file *file)
 {
 	int ret = BCME_ERROR;
 	if (inode) {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0))
+		ret = single_open(file, 0, pde_data(inode));
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
 		ret = single_open(file, 0, PDE_DATA(inode));
 #else
 		/* This feature is not supported for lower kernel versions */
@@ -2975,6 +2977,9 @@ static struct attribute *default_file_attrs[] = {
 	&dhd_attr_arp_print.attr,
 	NULL
 };
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+ATTRIBUTE_GROUPS(default_file);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) */
 
 /*
  * wifi kobject show function, the "attr" attribute specifices to which
@@ -3031,7 +3036,11 @@ static struct sysfs_ops dhd_sysfs_ops = {
 
 static struct kobj_type dhd_ktype = {
 	.sysfs_ops = &dhd_sysfs_ops,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+	.default_groups = default_file_groups,
+#else
 	.default_attrs = default_file_attrs,
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) */
 };
 
 /*
@@ -3453,6 +3462,9 @@ static struct attribute *debug_lb_attrs[] = {
 	&dhd_tx_cpu.attr,
 	NULL
 };
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+ATTRIBUTE_GROUPS(debug_lb);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) */
 
 #define to_dhd_lb(k) container_of(k, struct dhd_info, dhd_lb_kobj)
 
@@ -3511,7 +3523,11 @@ static struct sysfs_ops dhd_sysfs_lb_ops = {
 
 static struct kobj_type dhd_lb_ktype = {
 	.sysfs_ops = &dhd_sysfs_lb_ops,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+	.default_groups = debug_lb_groups,
+#else
 	.default_attrs = debug_lb_attrs,
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) */
 };
 #endif /* DHD_LB */
 
@@ -3641,6 +3657,9 @@ static struct attribute *debug_dpc_bounds_attrs[] = {
 	&dhd_attr_ctrl_cpl_post_bound.attr,
 	NULL
 };
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+ATTRIBUTE_GROUPS(debug_dpc_bounds);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) */
 
 #define to_dhd_dpc_bounds(k) container_of(k, struct dhd_info, dhd_dpc_bounds_kobj)
 
@@ -3699,7 +3718,11 @@ static struct sysfs_ops dhd_sysfs_dpc_bounds_ops = {
 
 static struct kobj_type dhd_dpc_bounds_ktype = {
 	.sysfs_ops = &dhd_sysfs_dpc_bounds_ops,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+	.default_groups = debug_dpc_bounds_groups,
+#else
 	.default_attrs = debug_dpc_bounds_attrs,
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) */
 };
 
 /*
@@ -3841,6 +3864,9 @@ static struct attribute *debug_logger_attrs[] = {
 	&dhd_logger_attr_route_events.attr,
 	NULL
 };
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+ATTRIBUTE_GROUPS(debug_logger);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) */
 
 #define to_dhd_logger(k) container_of(k, struct dhd_info, dhd_logger_kobj)
 
@@ -3899,7 +3925,11 @@ static struct sysfs_ops dhd_sysfs_logger_ops = {
 
 static struct kobj_type dhd_logger_ktype = {
 	.sysfs_ops = &dhd_sysfs_logger_ops,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+	.default_groups = debug_logger_groups,
+#else
 	.default_attrs = debug_logger_attrs,
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) */
 };
 
 /*

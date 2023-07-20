@@ -471,6 +471,7 @@ typedef struct dhd_bus {
 	uint32 d0_inform_in_use_cnt;
 #ifdef DHD_TREAT_D3ACKTO_AS_LINKDWN
 	uint32 d3ackto_as_linkdwn_cnt;
+	uint32 iovarto_as_linkdwn_cnt;
 #endif
 	uint8 force_suspend;
 	uint8 is_linkdown;
@@ -577,9 +578,9 @@ typedef struct dhd_bus {
 #if defined(PCIE_OOB) || defined(PCIE_INB_DW)
 	bool  ds_enabled;
 #endif
-#ifdef DHD_PCIE_RUNTIMEPM
+#ifdef OEM_ANDROID
 	bool chk_pm;	/* To avoid counting of wake up from Runtime PM */
-#endif /* DHD_PCIE_RUNTIMEPM */
+#endif /* OEM_ANDROID */
 #if defined(PCIE_INB_DW)
 	bool calc_ds_exit_latency;
 	bool deep_sleep; /* Indicates deep_sleep set or unset by the DHD IOVAR deep_sleep */

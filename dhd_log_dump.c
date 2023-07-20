@@ -1484,7 +1484,7 @@ do_dhd_log_dump(dhd_pub_t *dhdp, log_dump_type_t *type)
 {
 	int ret = 0, i = 0;
 	struct file *fp = NULL;
-	mm_segment_t fs;
+	MM_SEGMENT_T fs;
 	loff_t pos = 0;
 	char dump_path[128];
 	uint32 file_mode;

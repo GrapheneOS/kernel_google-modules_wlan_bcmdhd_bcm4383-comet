@@ -2440,6 +2440,9 @@ typedef uint32 ratespec_t;
 #define WL_TXPWR_2G		(1U<<30)
 #define WL_TXPWR_5G		(1U<<29)
 #define WL_TXPWR_NEG   (1U<<28)
+#define WL_TXPWR_DEV_CAT_MASK  0xC000000
+#define WL_TXPWR_DEV_CAT_SHIFT (26u)
+#define WL_TXPWR_DEV_CAT_MAX	(3u) /* Max dev cat is SP */
 
 #define WL_TXPWR_MASK		(~(0x7<<29))
 #define WL_TXPWR_CORE_MAX	(3)

@@ -936,7 +936,11 @@ wl_cfg80211_handle_if_role_conflict(struct bcm_cfg80211 *cfg,
 #endif /* WL_IFACE_MGMT */
 
 s32
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0))
+wl_release_vif_macaddr(struct bcm_cfg80211 *cfg, const u8 *mac_addr, u16 wl_iftype)
+#else
 wl_release_vif_macaddr(struct bcm_cfg80211 *cfg, u8 *mac_addr, u16 wl_iftype)
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0) */
 {
 	struct net_device *ndev =  bcmcfg_to_prmry_ndev(cfg);
 	u16 org_toggle_bytes;
@@ -1952,9 +1956,16 @@ wl_filter_restricted_subbands(struct bcm_cfg80211 *cfg,
 	err = wldev_iovar_getbuf_bsscfg(bcmcfg_to_prmry_ndev(cfg), "chan_info_list", NULL,
 			0, chan_list, CHANINFO_LIST_BUF_SIZE, 0, NULL);
 	if (err) {
-		MFREE(cfg->osh, chan_list, CHANINFO_LIST_BUF_SIZE);
-		WL_ERR(("get chan_info_list err(%d)\n", err));
-		err = BCME_ERROR;
+		if (err == BCME_UNSUPPORTED) {
+			/* if chan_info_list is not supported, attempt with current chanspec and let
+			 * fw reject if unsupported. Host based trim down not supported.
+			 */
+			err = BCME_OK;
+			goto exit;
+		} else {
+			WL_ERR(("get chan_info_list err(%d)\n", err));
+			err = BCME_ERROR;
+		}
 		goto exit;
 	}
 
@@ -3757,6 +3768,7 @@ wl_cfg80211_bcn_bringup_ap(
 
 	/* Common code for SoftAP and P2P GO */
 	wl_clr_drv_status(cfg, AP_CREATED, dev);
+	wl_set_drv_status(cfg, AP_BSS_UP_IN_PROG, dev);
 
 	/* Make sure INFRA is set for AP/GO */
 	err = wldev_ioctl_set(dev, WLC_SET_INFRA, &infra, sizeof(s32));
@@ -4005,6 +4017,7 @@ exit:
 			dhd_cancel_delayed_work_sync(&cfg->ap_work);
 			WL_DBG(("cancelled ap_work\n"));
 		}
+		wl_clr_drv_status(cfg, AP_BSS_UP_IN_PROG, dev);
 	}
 	return err;
 }
@@ -4903,6 +4916,7 @@ wl_cfg80211_stop_ap(
 #endif
 
 	wl_clr_drv_status(cfg, AP_CREATING, dev);
+	wl_clr_drv_status(cfg, AP_BSS_UP_IN_PROG, dev);
 	wl_clr_drv_status(cfg, AP_CREATED, dev);
 	cfg->ap_oper_channel = INVCHANSPEC;
 
@@ -5362,6 +5376,7 @@ wl_cfg80211_del_beacon(struct wiphy *wiphy, struct net_device *dev)
 	}
 
 	wl_clr_drv_status(cfg, AP_CREATING, dev);
+	wl_clr_drv_status(cfg, AP_BSS_UP_IN_PROG, dev);
 	wl_clr_drv_status(cfg, AP_CREATED, dev);
 
 	/* Clear AP/GO connected status */
@@ -5825,6 +5840,7 @@ wl_notify_connect_status_ap(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 			/* AP/GO brought up successfull in firmware */
 			WL_INFORM_MEM(("** AP/GO Link up for dev:%s **\n", ndev->name));
 			wl_set_drv_status(cfg, AP_CREATED, ndev);
+			wl_clr_drv_status(cfg, AP_BSS_UP_IN_PROG, ndev);
 
 #if defined(WL_MLO) && defined(WL_MLO_AP)
 			if (cfg->mlo.ap.num_links_configured) {
@@ -6673,7 +6689,10 @@ wl_cfg80211_ch_switch_notify(struct net_device *dev, uint16 chanspec,
 	}
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION (3, 8, 0))
 	freq = chandef.chan ? chandef.chan->center_freq : chandef.center_freq1;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 2)) || defined(WL_MLO_BKPORT)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)) || defined(WL_CH_SWITCH_BKPORT)
+	/* FIXME: need to consider puncturing bitmap */
+	cfg80211_ch_switch_notify(dev, &chandef, link_id, 0);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 2)) || defined(WL_MLO_BKPORT)
 	cfg80211_ch_switch_notify(dev, &chandef, link_id);
 #else
 	cfg80211_ch_switch_notify(dev, &chandef);

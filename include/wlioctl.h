@@ -11078,7 +11078,8 @@ typedef enum tx_pwr_tlv_id {
 	TX_PWR_RPT_RU_RATE_INFO_ID = 64u,
 	TX_PWR_RPT_RUPDOFFSET_ID   = 65u,
 	TX_PWR_RPT_DEV_CAT_ID      = 66u,
-	TX_PWR_RPT_PAMODE_ID	   = 67u
+	TX_PWR_RPT_PAMODE_ID	   = 67u,
+	TX_PWR_RPT_LPC_OFFSET_ID   = 68u
 } tx_pwr_tlv_id_t;
 
 #include <packed_section_start.h>

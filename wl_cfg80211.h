@@ -779,8 +779,13 @@ do {									\
 #define WL_INVALID		-1
 
 #ifdef DHD_LOSSLESS_ROAMING
-#define WL_ROAM_TIMEOUT_MS	3000 /* Roam timeout */
-#endif
+#ifdef OEM_ANDROID
+#define WL_ROAM_TIMEOUT_MS	3000 /* roam success/fail would pre-empt the timer */
+#else
+#define WL_ROAM_TIMEOUT_MS	1000 /* Roam timeout */
+#endif /* OEM_ANDROID */
+#endif /* DHD_LOSSLESS_ROAMING */
+
 /* Bring down SCB Timeout to 20secs from 60secs default */
 #ifndef WL_SCB_TIMEOUT
 #define WL_SCB_TIMEOUT	20
@@ -1018,6 +1023,7 @@ enum wl_status {
 	WL_STATUS_CONNECTED,
 	WL_STATUS_DISCONNECTING,
 	WL_STATUS_AP_CREATING,
+	WL_STATUS_AP_BSS_UP_IN_PROG,
 	WL_STATUS_AP_ROLE_UPGRADED,
 	WL_STATUS_AP_CREATED,
 	/* whole sending action frame procedure:
@@ -3687,7 +3693,7 @@ int wl_set_rssi_logging(struct net_device *dev, void *param);
 int wl_get_rssi_per_ant(struct net_device *dev, char *ifname, char *peer_mac, void *param);
 #endif /* SUPPORT_RSSI_SUM_REPORT */
 struct wireless_dev * wl_cfg80211_add_if(struct bcm_cfg80211 *cfg, struct net_device *primary_ndev,
-	wl_iftype_t wl_iftype, const char *name, u8 *mac);
+	wl_iftype_t wl_iftype, const char *name, const u8 *mac);
 s32 _wl_cfg80211_del_if(struct bcm_cfg80211 *cfg, struct net_device *primary_ndev,
 	struct wireless_dev *wdev, char *ifname);
 s32 wl_cfg80211_delete_iface(struct bcm_cfg80211 *cfg, wl_iftype_t sec_data_if_type);

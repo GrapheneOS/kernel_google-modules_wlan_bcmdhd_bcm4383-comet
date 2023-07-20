@@ -319,6 +319,7 @@ endif
 	DHDCFLAGS += -DWBRC_WLAN_ON_FIRST_ALWAYS
 ifneq ($(filter y, $(CONFIG_BCM4390)),)
 	DHDCFLAGS += -DWBRC_HW_QUIRKS
+	DHDCFLAGS += -DCOEX_CPU
 endif
     # FW, NVRAM, CLM load based on VID module string, chipid and chiprev
 	DHDCFLAGS += -DSUPPORT_MULTIPLE_REVISION -DSUPPORT_MULTIPLE_REVISION_MAP
@@ -354,6 +355,8 @@ ifneq ($(CONFIG_SOC_GOOGLE),)
 	DHDCFLAGS += -DDHD_SKIP_COREDUMP_ON_HC
 	# Skip coredump for older chip revs
 	DHDCFLAGS += -DDHD_SKIP_COREDUMP_OLDER_CHIPS
+	# Skip coredump for continousy pkt drop health check
+	DHDCFLAGS += -DSKIP_COREDUMP_PKTDROP_RXHC
 endif
 endif
 
@@ -369,6 +372,10 @@ ifneq ($(CONFIG_SOC_GOOGLE),)
     DHDCFLAGS += -DWL_MLO_BKPORT_NEW_PORT_AUTH
     # CROSS AKM related back port changes
     DHDCFLAGS += -DWL_CROSS_AKM_BKPORT
+    ifeq ($(BCMDHD),4390)
+        # ch_switch_notify back port changes
+        DHDCFLAGS += -DWL_CH_SWITCH_BKPORT
+    endif
     DHDCFLAGS := $(filter-out -DDHD_DUMP_FILE_WRITE_FROM_KERNEL ,$(DHDCFLAGS))
 endif
 
@@ -609,15 +616,12 @@ ifneq ($(CONFIG_BCMDHD_PCIE),)
 	DHDCFLAGS += -DDHD_USE_COHERENT_MEM_FOR_RING
 	DHDCFLAGS += -DDHD_ALLOC_COHERENT_MEM_FROM_ATOMIC_POOL
     # Runtime PM feature
-	DHDCFLAGS += -DDHD_PCIE_RUNTIMEPM -DMAX_IDLE_COUNT=5
-
+        DHDCFLAGS += -DDHD_PCIE_RUNTIMEPM -DMAX_IDLE_COUNT=5
     #AXI error logging
-    DHDCFLAGS += -DDNGL_AXI_ERROR_LOGGING
-    #DHDCFLAGS += -DDHD_USE_WQ_FOR_DNGL_AXI_ERROR
-
+        DHDCFLAGS += -DDNGL_AXI_ERROR_LOGGING
+        #DHDCFLAGS += -DDHD_USE_WQ_FOR_DNGL_AXI_ERROR
     # 4way handshake disconnection feature
 	DHDCFLAGS += -DDHD_4WAYM4_FAIL_DISCONNECT
-
     ## OOB
     ifeq ($(CONFIG_BCMDHD_OOB_HOST_WAKE),y)
 	    DHDCFLAGS += -DBCMPCIE_OOB_HOST_WAKE
