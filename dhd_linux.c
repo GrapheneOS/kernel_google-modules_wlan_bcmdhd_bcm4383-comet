@@ -775,6 +775,11 @@ char *st_str_file_path = "rtecdc.bin";
 static char *map_file_path = "rtecdc.map";
 static char *rom_st_str_file_path = "roml.bin";
 static char *rom_map_file_path = "roml.map";
+#ifdef COEX_CPU
+static char *coex_logstrs_path = "coex_logstrs.bin";
+static char *coex_st_str_file_path = "coex_code.bin";
+static char *coex_map_file_path = "coex.map";
+#endif /* COEX_CPU */
 #elif defined(CUSTOMER_HW4_DEBUG)
 #define WIFI_PATH "/etc/wifi/"
 static char *logstrs_path = VENDOR_PATH WIFI_PATH"logstrs.bin";
@@ -2272,12 +2277,7 @@ int dhd_bssidx2idx(dhd_pub_t *dhdp, uint32 bssidx)
 int dhd_process_cid_mac(dhd_pub_t *dhdp, bool prepost)
 {
 	uint chipid = dhd_bus_chip_id(dhdp);
-	int ret = BCME_OK;
 	if (prepost) { /* pre process */
-		ret = dhd_alloc_cis(dhdp);
-		if (ret != BCME_OK) {
-			return ret;
-		}
 		switch (chipid) {
 #ifndef DHD_READ_CIS_FROM_BP
 			case BCM4389_CHIP_GRPID:
@@ -2286,7 +2286,11 @@ int dhd_process_cid_mac(dhd_pub_t *dhdp, bool prepost)
 				break;
 #endif /* !DHD_READ_CIS_FROM_BP */
 			default:
-				dhd_read_cis(dhdp);
+				/* cis information is filled in
+				 * dhd_parse_board_information much before
+				 * fw download, so no need to read cis from otp
+				 * here again
+				 */
 				break;
 		}
 		dhd_check_module_cid(dhdp);
@@ -2294,7 +2298,6 @@ int dhd_process_cid_mac(dhd_pub_t *dhdp, bool prepost)
 		dhd_set_macaddr_from_file(dhdp);
 	} else { /* post process */
 		dhd_write_macaddr(&dhdp->mac);
-		dhd_clear_cis(dhdp);
 	}
 
 	return BCME_OK;
@@ -3034,7 +3037,7 @@ _dhd_set_mac_address(dhd_info_t *dhd, int ifidx, uint8 *addr)
 	if (ret < 0) {
 		DHD_ERROR(("%s: set cur_etheraddr failed\n", dhd_ifname(&dhd->pub, ifidx)));
 	} else {
-		memcpy(dhd->iflist[ifidx]->net->dev_addr, addr, ETHER_ADDR_LEN);
+		NETDEV_ADDR_SET(dhd->iflist[ifidx]->net, ETHER_ADDR_LEN, addr, ETHER_ADDR_LEN);
 		if (ifidx == 0)
 			memcpy(dhd->pub.mac.octet, addr, ETHER_ADDR_LEN);
 	}
@@ -3524,7 +3527,7 @@ dhd_set_mac_address(struct net_device *dev, void *addr)
 			 * available). Store the address and return. macaddr will be applied
 			 * from interface create context.
 			 */
-			(void)memcpy_s(dev->dev_addr, ETH_ALEN, dhdif->mac_addr, ETH_ALEN);
+			NETDEV_ADDR_SET(dev, ETH_ALEN, dhdif->mac_addr, ETH_ALEN);
 			return ret;
 		}
 #endif /* WL_STATIC_IF */
@@ -3627,7 +3630,11 @@ int dhd_sendup(dhd_pub_t *dhdp, int ifidx, void *p)
 			 */
 			bcm_object_trace_opr(skb, BCM_OBJDBG_REMOVE,
 				__FUNCTION__, __LINE__);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+			netif_rx(skb);
+#else
 			netif_rx_ni(skb);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) */
 		}
 	}
 
@@ -3922,7 +3929,11 @@ dhd_netif_rx_ni(struct sk_buff * skb)
 	 * does netif_rx, disables irq, raise NET_IF_RX softirq and
 	 * enables interrupts back
 	 */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+	netif_rx(skb);
+#else
 	netif_rx_ni(skb);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) */
 }
 
 static int
@@ -4128,7 +4139,7 @@ dhd_logtrace_thread(void *data)
 		}
 	}
 exit:
-	complete_and_exit(&tsk->completed, 0);
+	KTHREAD_COMPLETE_AND_EXIT(&tsk->completed, 0);
 	dhdp->logtrace_thr_ts.complete_time = OSL_LOCALTIME_NS();
 }
 #else
@@ -4657,7 +4668,7 @@ dhd_watchdog_thread(void *data)
 		}
 	}
 
-	complete_and_exit(&tsk->completed, 0);
+	KTHREAD_COMPLETE_AND_EXIT(&tsk->completed, 0);
 }
 
 static void dhd_watchdog(ulong data)
@@ -4762,7 +4773,7 @@ dhd_rpm_state_thread(void *data)
 		}
 	}
 
-	complete_and_exit(&tsk->completed, 0);
+	KTHREAD_COMPLETE_AND_EXIT(&tsk->completed, 0);
 }
 
 static void dhd_runtimepm(ulong data)
@@ -4899,7 +4910,8 @@ dhd_dpc_thread(void *data)
 			break;
 		}
 	}
-	complete_and_exit(&tsk->completed, 0);
+
+	KTHREAD_COMPLETE_AND_EXIT(&tsk->completed, 0);
 }
 
 #ifdef BCMPCIE
@@ -7166,8 +7178,7 @@ dhd_open(struct net_device *net)
 #endif
 
 		/* dhd_sync_with_dongle has been called in dhd_bus_start or wl_android_wifi_on */
-		memcpy(net->dev_addr, dhd->pub.mac.octet, ETHER_ADDR_LEN);
-
+		NETDEV_ADDR_SET(net, ETHER_ADDR_LEN, dhd->pub.mac.octet, ETHER_ADDR_LEN);
 #ifdef TOE
 		/* Get current TOE mode from dongle */
 		if (dhd_toe_get(dhd, ifidx, &toe_ol) >= 0 && (toe_ol & TOE_TX_CSUM_OL) != 0) {
@@ -7184,8 +7195,13 @@ dhd_open(struct net_device *net)
 		if (dhd->rx_napi_netdev == NULL) {
 			dhd->rx_napi_netdev = dhd->iflist[ifidx]->net;
 			bzero(&dhd->rx_napi_struct, sizeof(struct napi_struct));
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0)
+			netif_napi_add_weight(dhd->rx_napi_netdev, &dhd->rx_napi_struct,
+				dhd_napi_poll, dhd_napi_weight);
+#else
 			netif_napi_add(dhd->rx_napi_netdev, &dhd->rx_napi_struct,
 				dhd_napi_poll, dhd_napi_weight);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0) */
 			DHD_INFO(("%s napi<%p> enabled ifp->net<%p,%s> dhd_napi_weight: %d\n",
 				__FUNCTION__, &dhd->rx_napi_struct, net,
 				net->name, dhd_napi_weight));
@@ -8324,7 +8340,7 @@ dhd_lookup_map(osl_t *osh, char *fname, uint32 pc, char *pc_fn,
 	uint32 size = 0, mem_offset = 0;
 #else
 	struct file *filep = NULL;
-	mm_segment_t fs;
+	MM_SEGMENT_T fs;
 #endif /* DHD_LINUX_STD_FW_API */
 	char *raw_fmts = NULL, *raw_fmts_loc = NULL, *cptr = NULL;
 	uint32 read_size = READ_NUM_BYTES;
@@ -8752,7 +8768,7 @@ dhd_init_logstrs_array(dhd_info_t *dhdinfo, char *file_path)
 {
 	struct file *filep = NULL;
 	struct kstat stat;
-	mm_segment_t fs;
+	MM_SEGMENT_T fs;
 	char *raw_fmts =  NULL;
 	int logstrs_size = 0;
 	int error = 0;
@@ -8838,7 +8854,7 @@ dhd_read_map(const dhd_info_t *dhdinfo, const char *fname, uint32 *ramstart, uin
 		uint32 *rodata_end)
 {
 	struct file *filep = NULL;
-	mm_segment_t fs;
+	MM_SEGMENT_T fs;
 	int err = BCME_ERROR;
 
 	if (fname == NULL) {
@@ -8871,7 +8887,7 @@ static int
 dhd_init_static_strs_array(dhd_info_t *dhdinfo, const char *str_file, const char *map_file)
 {
 	struct file *filep = NULL;
-	mm_segment_t fs;
+	MM_SEGMENT_T fs;
 	char *raw_fmts =  NULL;
 	uint32 logstrs_size = 0;
 	int error = 0;
@@ -9434,6 +9450,11 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 #ifdef RX_PKT_POOL
 	dhd_rx_pktpool_init(dhd);
 #endif /* RX_PKT_POOL */
+
+	if (dhd_alloc_cis(&dhd->pub) != BCME_OK) {
+		DHD_ERROR(("%s: alloc CIS buf failed!\n", __FUNCTION__));
+		goto fail;
+	}
 
 #ifdef WL_CFGVENDOR_SEND_HANG_EVENT
 	dhd->pub.hang_info = MALLOCZ(osh, VENDOR_SEND_HANG_EXT_INFO_LEN);
@@ -10919,7 +10940,7 @@ static int dhd_preinit_proc(dhd_pub_t *dhd, int ifidx, char *name, char *value)
 
 static int dhd_preinit_config(dhd_pub_t *dhd, int ifidx)
 {
-	mm_segment_t fs;
+	MM_SEGMENT_T fs;
 	struct kstat stat;
 	struct file *fp = NULL;
 	unsigned int len;
@@ -14612,7 +14633,7 @@ dhd_register_if(dhd_pub_t *dhdp, int ifidx, bool need_rtnl_lock)
 	 * Linux 2.6.25 does not like a blank MAC address, so use a
 	 * dummy address until the interface is brought up.
 	 */
-	memcpy(net->dev_addr, temp_addr, ETHER_ADDR_LEN);
+	NETDEV_ADDR_SET(net, ETHER_ADDR_LEN, temp_addr, ETHER_ADDR_LEN);
 
 	if (ifidx == 0)
 		DHD_CONS_ONLY(("%s\n", dhd_version));
@@ -14840,6 +14861,17 @@ void dhd_detach(dhd_pub_t *dhdp)
 	}
 #endif /* CONFIG_HAS_EARLYSUSPEND && DHD_USE_EARLYSUSPEND */
 
+	if (dhdp->dbg) {
+#ifdef DEBUGABILITY
+#ifdef DBG_PKT_MON
+		dhd_os_dbg_detach_pkt_monitor(dhdp);
+		osl_spin_lock_deinit(dhd->pub.osh, dhd->pub.dbg->pkt_mon_lock);
+#endif /* DBG_PKT_MON */
+#endif /* DEBUGABILITY */
+
+		/* dbg->private and dbg freed after calling below */
+		dhd_os_dbg_detach(dhdp);
+	}
 
 	/* delete all interfaces, start with virtual  */
 	if (dhd->dhd_state & DHD_ATTACH_STATE_ADD_IF) {
@@ -15005,6 +15037,8 @@ void dhd_detach(dhd_pub_t *dhdp)
 #ifdef RX_PKT_POOL
 	dhd_rx_pktpool_deinit(dhd);
 #endif
+	dhd_clear_cis(dhdp);
+
 	/* Free the memory alloc'd for socram */
 	if (dhd->pub.soc_ram) {
 #if defined(CONFIG_DHD_USE_STATIC_BUF) && defined(DHD_USE_STATIC_MEMDUMP)
@@ -15032,17 +15066,6 @@ void dhd_detach(dhd_pub_t *dhdp)
 	destroy_workqueue(dhd->rx_wq);
 	dhd->rx_wq = NULL;
 #endif /* DHD_PCIE_NATIVE_RUNTIMEPM */
-#ifdef DEBUGABILITY
-	if (dhdp->dbg) {
-#ifdef DBG_PKT_MON
-		dhd_os_dbg_detach_pkt_monitor(dhdp);
-		osl_spin_lock_deinit(dhd->pub.osh, dhd->pub.dbg->pkt_mon_lock);
-#endif /* DBG_PKT_MON */
-	}
-#endif /* DEBUGABILITY */
-	if (dhdp->dbg) {
-		dhd_os_dbg_detach(dhdp);
-	}
 
 #ifdef DHD_MEM_STATS
 	osl_spin_lock_deinit(dhd->pub.osh, dhd->pub.mem_stats_lock);
@@ -17831,6 +17854,7 @@ dhd_dev_apf_add_filter(struct net_device *ndev, u8* program,
 	if (dhdp->apf_set) {
 		ret = _dhd_apf_delete_filter(ndev, PKT_FILTER_APF_ID);
 		if (unlikely(ret)) {
+			DHD_ERROR(("%s: Failed to delete APF filter\n", __FUNCTION__));
 			goto exit;
 		}
 		dhdp->apf_set = FALSE;
@@ -17838,6 +17862,7 @@ dhd_dev_apf_add_filter(struct net_device *ndev, u8* program,
 
 	ret = _dhd_apf_add_filter(ndev, PKT_FILTER_APF_ID, program, program_len);
 	if (ret) {
+		DHD_ERROR(("%s: Failed to add APF filter\n", __FUNCTION__));
 		goto exit;
 	}
 	dhdp->apf_set = TRUE;
@@ -17851,6 +17876,7 @@ dhd_dev_apf_add_filter(struct net_device *ndev, u8* program,
 		ret = _dhd_apf_config_filter(ndev, PKT_FILTER_APF_ID,
 			PKT_FILTER_MODE_FORWARD_ON_MATCH, TRUE);
 		if (ret) {
+			DHD_ERROR(("%s: Failed to config APF filter\n", __FUNCTION__));
 			goto exit;
 		}
 	}
@@ -18450,7 +18476,7 @@ int write_file(const char * file_name, uint32 flags, uint8 *buf, int size)
 	int ret = 0;
 	struct file *fp = NULL;
 	loff_t pos = 0;
-	mm_segment_t fs;
+	MM_SEGMENT_T fs;
 	/* change to KERNEL_DS address limit */
 	GETFS_AND_SETFS_TO_KERNEL_DS(fs);
 
@@ -19882,7 +19908,7 @@ dhd_get_rnd_info(dhd_pub_t *dhd)
 	int ret = BCME_ERROR;
 	char *filepath = RND_IN;
 	uint32 file_mode =  O_RDONLY;
-	mm_segment_t fs;
+	MM_SEGMENT_T fs;
 	loff_t pos = 0;
 
 	/* Read memdump info from the file */
@@ -19954,7 +19980,7 @@ dhd_dump_rnd_info(dhd_pub_t *dhd, uint8 *rnd_buf, uint32 rnd_len)
 	int ret = BCME_OK;
 	char *filepath = RND_OUT;
 	uint32 file_mode = O_CREAT | O_WRONLY | O_SYNC;
-	mm_segment_t fs;
+	MM_SEGMENT_T fs;
 	loff_t pos = 0;
 
 	/* Read memdump info from the file */
@@ -22517,7 +22543,7 @@ dhd_write_file(const char *filepath, char *buf, int buf_len)
 {
 	struct file *fp = NULL;
 	int ret = 0;
-	mm_segment_t fs;
+	MM_SEGMENT_T fs;
 	/* change to KERNEL_DS address limit */
 	GETFS_AND_SETFS_TO_KERNEL_DS(fs);
 
@@ -22551,7 +22577,7 @@ dhd_read_file(const char *filepath, char *buf, int buf_len)
 {
 	struct file *fp = NULL;
 	int ret;
-	mm_segment_t fs;
+	MM_SEGMENT_T fs;
 	/* change to KERNEL_DS address limit */
 	GETFS_AND_SETFS_TO_KERNEL_DS(fs);
 

@@ -210,7 +210,9 @@ typedef uint32 ratespec_bw_t;
 #define RSPEC_IS320MHZ(rspec)	(FALSE)
 #endif /* WL_BW320MHZ */
 
-#define WL_RSPEC_BW(rspec)	(((rspec) & WL_RSPEC_BW_MASK) >> WL_RSPEC_BW_SHIFT)
+#define WL_RSPEC_BW(rspec)	(RSPEC_BW(rspec) >> WL_RSPEC_BW_SHIFT)
+#define RSPEC_BW_REPL(rspec, rspec_bw)	\
+	(((rspec) & ~WL_RSPEC_BW_MASK) | (rspec_bw))
 
 #define RSPEC_BW_GE(rspec, rspec_bw) (RSPEC_BW(rspec) >= rspec_bw)
 #define RSPEC_BW_LE(rspec, rspec_bw) (RSPEC_BW(rspec) <= rspec_bw)

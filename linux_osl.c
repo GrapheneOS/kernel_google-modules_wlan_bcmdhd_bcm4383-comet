@@ -1329,9 +1329,9 @@ osl_dma_free_consistent(osl_t *osh, void *va, uint size, dmaaddr_t pa)
 #else
 #ifdef BCMDMA64OSL
 	PHYSADDRTOULONG(pa, paddr);
-	pci_free_consistent(osh->pdev, size, va, paddr);
+	DHD_DMA_FREE_COHERENT(osh->pdev, size, va, paddr);
 #else
-	pci_free_consistent(osh->pdev, size, va, (dma_addr_t)pa);
+	DHD_DMA_FREE_COHERENT(osh->pdev, size, va, (dma_addr_t)pa);
 #endif /* BCMDMA64OSL */
 #endif /* __ARM_ARCH_7A__ && !DHD_USE_COHERENT_MEM_FOR_RING */
 }
@@ -1367,9 +1367,9 @@ BCMFASTPATH(osl_dma_map)(osl_t *osh, void *va, uint size, int direction, void *p
 	/* For Rx buffers, keep direction as bidirectional to handle packet fetch cases */
 	dir = (direction == DMA_RX)? DMA_RXTX: direction;
 
-	map_addr = pci_map_single(osh->pdev, va, size, dir);
+	map_addr = DHD_DMA_MAP_SINGLE(osh->pdev, va, size, dir);
 
-	ret = pci_dma_mapping_error(osh->pdev, map_addr);
+	ret = DHD_DMA_MAPPING_ERROR(osh->pdev, map_addr);
 
 	if (ret) {
 		OSL_PRINT(("%s: Failed to map memory\n", __FUNCTION__));
@@ -1411,9 +1411,9 @@ BCMFASTPATH(osl_dma_unmap)(osl_t *osh, dmaaddr_t pa, uint size, int direction)
 
 #ifdef BCMDMA64OSL
 	PHYSADDRTOULONG(pa, paddr);
-	pci_unmap_single(osh->pdev, paddr, size, dir);
+	DHD_DMA_UNMAP_SINGLE(osh->pdev, paddr, size, dir);
 #else /* BCMDMA64OSL */
-	pci_unmap_single(osh->pdev, (uint32)pa, size, dir);
+	DHD_DMA_UNMAP_SINGLE(osh->pdev, (uint32)pa, size, dir);
 #endif /* BCMDMA64OSL */
 
 	DMA_UNLOCK(osh);
