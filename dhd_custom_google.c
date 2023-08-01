@@ -143,6 +143,14 @@ typedef struct {
     char sku[MAX_HW_INFO_LEN];
 } sku_info_t;
 
+#if defined(BCM4383_CHIP_DEF)
+sku_info_t sku_table[] = {
+	{ {"G8HHN"}, {"MMW"} },
+	{ {"G6GPR"}, {"ROW"} },
+	{ {"G576D"}, {"JPN"} },
+	{ {"GKV4X"}, {"NA"} }
+};
+#else
 sku_info_t sku_table[] = {
 	{ {"G9S9B"}, {"MMW"} },
 	{ {"G8V0U"}, {"MMW"} },
@@ -171,6 +179,7 @@ sku_info_t sku_table[] = {
 	{ {"G1AZG"}, {"EU"} },
 	{ {"G9BQD"}, {"NA"} }
 };
+#endif
 
 static int
 dhd_wlan_get_mac_addr(unsigned char *buf)

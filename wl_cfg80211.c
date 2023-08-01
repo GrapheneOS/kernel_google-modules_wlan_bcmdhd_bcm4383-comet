@@ -2453,6 +2453,8 @@ wl_cfg80211_iface_state_ops(struct wireless_dev *wdev,
 				if (ret == BCME_OK) {
 					/* disable multi link for mlo stas */
 					wl_cfgvif_set_multi_link(cfg, FALSE);
+				} else {
+					return ret;
 				}
 			}
 #ifdef WL_BCNRECV
@@ -2712,7 +2714,7 @@ _wl_cfg80211_check_axi_error(struct bcm_cfg80211 *cfg)
 static struct wireless_dev *
 _wl_cfg80211_add_if(struct bcm_cfg80211 *cfg,
 	struct net_device *primary_ndev,
-	wl_iftype_t wl_iftype, const char *name, u8 *mac)
+	wl_iftype_t wl_iftype, const char *name, const u8 *mac)
 {
 	u8 mac_addr[ETH_ALEN];
 	s32 err = -ENODEV;
@@ -2895,7 +2897,7 @@ exit:
 struct wireless_dev *
 wl_cfg80211_add_if(struct bcm_cfg80211 *cfg,
 	struct net_device *primary_ndev,
-	wl_iftype_t wl_iftype, const char *name, u8 *mac)
+	wl_iftype_t wl_iftype, const char *name, const u8 *mac)
 {
 	struct wireless_dev *wdev = NULL;
 	mutex_lock(&cfg->if_sync);
@@ -3952,7 +3954,7 @@ wl_cfg80211_post_ifcreate(struct net_device *ndev,
 		new_ndev->ieee80211_ptr = wdev;
 		SET_NETDEV_DEV(new_ndev, wiphy_dev(wdev->wiphy));
 
-		memcpy(new_ndev->dev_addr, addr, ETH_ALEN);
+		NETDEV_ADDR_SET(new_ndev, ETH_ALEN, addr, ETH_ALEN);
 		if (wl_cfg80211_register_if(cfg, event->ifidx, new_ndev, rtnl_lock_reqd)
 			!= BCME_OK) {
 			WL_ERR(("IFACE register failed \n"));
@@ -4032,6 +4034,14 @@ wl_cfg80211_delete_iface(struct bcm_cfg80211 *cfg,
 			if (iter->iftype != sec_data_if_type) {
 				continue;
 			}
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
+			if (iter->ndev->flags & IFF_UP) {
+				WL_ERR(("Avoid deleting netdev in UP state\n"));
+				ret = -ENOTSUPP;
+				goto fail;
+			}
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0) */
+
 			switch (sec_data_if_type) {
 				case WL_IF_TYPE_P2P_GO:
 				case WL_IF_TYPE_P2P_GC: {
@@ -7133,14 +7143,6 @@ wl_config_assoc_ies(struct bcm_cfg80211 *cfg, struct net_device *dev,
 	u16 p2p_ie_len = 0;
 	bcm_tlv_t *ie = NULL;
 
-#if defined(DHD_DSCP_POLICY)
-	/* Add WFA capabilities vendor-specific IE in the assoc request */
-	if ((err = dhd_dscp_policy_set_vndr_ie(cfg, dev, bssidx)) != BCME_OK) {
-		WL_ERR(("Failed to set vendor-specific WFA Cap IE in assoc request: %d\n", err));
-		/* continue */
-	}
-#endif /* DHD_DSCP_POLICY */
-
 	/* configure all vendor and extended vendor IEs */
 	wl_cfg80211_set_mgmt_vndr_ies(cfg, ndev_to_cfgdev(dev), bssidx,
 		VNDR_IE_ASSOCREQ_FLAG, sme->ie, sme->ie_len);
@@ -7796,7 +7798,7 @@ wl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 		err = -EINVAL;
 		goto fail;
 	}
-	if (wl_get_drv_status_all(cfg, AP_CREATING)) {
+	if (wl_get_drv_status_all(cfg, AP_BSS_UP_IN_PROG)) {
 		WL_ERR(("AP creates in progress, so skip this connection for creating AP.\n"));
 		err = -EBUSY;
 		goto fail;
@@ -19646,7 +19648,12 @@ static int wl_construct_reginfo(struct bcm_cfg80211 *cfg, s32 bw_cap_2g,
 		WL_ERR(("No scan cache buf available\n"));
 		return -ENOMEM;
 	}
-	list = cfg->chan_info_list;
+
+	list = MALLOCZ(cfg->osh, CHAN_LIST_BUF_LEN);
+	if (list == NULL) {
+		WL_ERR(("failed to allocate local buf\n"));
+		return -ENOMEM;
+	}
 
 	err = wldev_iovar_getbuf_bsscfg(dev, "chan_info_list", NULL,
 		0, list, CHAN_LIST_BUF_LEN, 0, &cfg->ioctl_buf_sync);
@@ -19656,13 +19663,13 @@ static int wl_construct_reginfo(struct bcm_cfg80211 *cfg, s32 bw_cap_2g,
 			0, list, CHAN_LIST_BUF_LEN, 0, &cfg->ioctl_buf_sync);
 		if (err != BCME_OK) {
 			WL_ERR(("get chanspecs err(%d)\n", err));
-			return err;
+			goto exit;
 		}
 		/* Update indicating legacy chan info usage */
 		legacy_chan_info = TRUE;
 	} else if (err != BCME_OK) {
 		WL_ERR(("get chan_info_list err(%d)\n", err));
-		return err;
+		goto exit;
 	}
 
 	WL_CHANNEL_ARRAY_INIT(__wl_2ghz_channels);
@@ -19683,10 +19690,19 @@ static int wl_construct_reginfo(struct bcm_cfg80211 *cfg, s32 bw_cap_2g,
 
 	if (tot_size > CHAN_LIST_BUF_LEN) {
 		WL_ERR(("invalid chan_info_list size (%d)\n", tot_size));
-		return err;
+		goto exit;
 	}
 
 	WL_DBG(("chan_info_list cnt:%d\n", list_count));
+
+	if (!wl_cfgvif_get_iftype_count(cfg, WL_IF_TYPE_STA)) {
+		/* Cache chan_info_list whenever regulatory is udpated except from
+		 * the STA connection as STA connection would clear radar/indoor flags.
+		 */
+		WL_INFORM_MEM(("updating chan_info_list\n"));
+		/* chan_info_list cache allocated using same macro */
+		(void)memcpy_s(cfg->chan_info_list, CHAN_LIST_BUF_LEN, list, CHAN_LIST_BUF_LEN);
+	}
 
 	for (i = 0; i < dtoh32(list_count); i++) {
 		index = 0;
@@ -19808,6 +19824,10 @@ static int wl_construct_reginfo(struct bcm_cfg80211 *cfg, s32 bw_cap_2g,
 	__wl_band_6ghz.n_channels = ARRAYSIZE(__wl_6ghz_channels);
 #endif /* CFG80211_6G_SUPPORT */
 
+exit:
+	if (list) {
+		MFREE(cfg->osh, list, CHAN_LIST_BUF_LEN);
+	}
 	return err;
 }
 
@@ -20906,6 +20926,7 @@ static s32 __wl_cfg80211_down(struct bcm_cfg80211 *cfg)
 		wl_clr_drv_status(cfg, DISCONNECTING, iter->ndev);
 		wl_clr_drv_status(cfg, AP_CREATED, iter->ndev);
 		wl_clr_drv_status(cfg, AP_CREATING, iter->ndev);
+		wl_clr_drv_status(cfg, AP_BSS_UP_IN_PROG, iter->ndev);
 		wl_clr_drv_status(cfg, NESTED_CONNECT, iter->ndev);
 		wl_clr_drv_status(cfg, CFG80211_CONNECT, iter->ndev);
 		wl_clr_drv_status(cfg, CSA_ACTIVE, iter->ndev);
@@ -23731,18 +23752,15 @@ static bool wl_cfg80211_wbtext_add_bssid_list(struct bcm_cfg80211 *cfg, struct e
 
 static void wl_cfg80211_wbtext_clear_bssid_list(struct bcm_cfg80211 *cfg)
 {
-	wl_wbtext_bssid_t *bssid = NULL;
+	wl_wbtext_bssid_t *bssid = NULL, *tmp = NULL;
 	char eabuf[ETHER_ADDR_STR_LEN];
 
-	while (!list_empty(&cfg->wbtext_bssid_list)) {
-		GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
-		bssid = list_entry(cfg->wbtext_bssid_list.next, wl_wbtext_bssid_t, list);
+	GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
+	list_for_each_entry_safe(bssid, tmp, &cfg->wbtext_bssid_list, list) {
 		GCC_DIAGNOSTIC_POP();
-		if (bssid) {
-			WL_DBG(("clear wbtext bssid : %s\n", bcm_ether_ntoa(&bssid->ea, eabuf)));
-			list_del(&bssid->list);
-			MFREE(cfg->osh, bssid, sizeof(wl_wbtext_bssid_t));
-		}
+		WL_DBG(("clear wbtext bssid : %s\n", bcm_ether_ntoa(&bssid->ea, eabuf)));
+		list_del(&bssid->list);
+		MFREE(cfg->osh, bssid, sizeof(wl_wbtext_bssid_t));
 	}
 }
 

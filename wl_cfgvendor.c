@@ -7649,6 +7649,7 @@ wl_cfgvendor_nan_cmn_suspend_resume(struct wiphy *wiphy,
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
 	int status = BCME_OK;
 	uint32 nan_attr_mask = 0;
+	nan_hal_resp_t nan_req_resp;
 
 	if (!cfg->nancfg->is_suspension_supported) {
 		ret = BCME_UNSUPPORTED;
@@ -7682,6 +7683,11 @@ wl_cfgvendor_nan_cmn_suspend_resume(struct wiphy *wiphy,
 		goto exit;
 	}
 exit:
+	bzero(&nan_req_resp, sizeof(nan_req_resp));
+	ret = wl_cfgvendor_nan_cmd_reply(wiphy,
+	      (suspend == WL_NAN_CMD_SUSPEND) ? NAN_WIFI_SUBCMD_SUSPEND : NAN_WIFI_SUBCMD_RESUME,
+	      &nan_req_resp, ret, cmd_data ? cmd_data->status : BCME_OK);
+
 	if (cmd_data) {
 		MFREE(cfg->osh, cmd_data, sizeof(*cmd_data));
 	}
@@ -7872,7 +7878,7 @@ wl_cfgvendor_get_radio_stats(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 			} else {
 				radio_h_v2[i].on_time_scan = 0;
 			}
-			radio_h_v2[i].on_time_nbd = (uint32)(radio_v2->on_time_nbd / 1000);
+			radio_h_v2[i].on_time_nbd = (uint32)(radio_v2->on_time_nbd);
 			radio_h_v2[i].on_time_gscan = (uint32)(radio_v2->on_time_gscan / 1000);
 			radio_h_v2[i].on_time_roam_scan = radio_v2->on_time_roam_scan;
 			radio_h_v2[i].on_time_pno_scan =
@@ -8774,6 +8780,10 @@ wl_cfgvendor_dbg_file_dump(struct wiphy *wiphy,
 			case DUMP_BUF_ATTR_DHD_DUMP :
 				ret = dhd_print_dump_data(bcmcfg_to_prmry_ndev(cfg), NULL,
 					buf->data_buf[0], NULL, (uint32)buf->len, &pos);
+#ifdef DHD_TREAT_D3ACKTO_AS_LINKDWN
+				WL_ERR(("%s: reset no_pcie_access_during_dump\n", __func__));
+				dhd_pub->no_pcie_access_during_dump = FALSE;
+#endif /* DHD_TREAT_D3ACKTO_AS_LINKDWN */
 				break;
 #if defined(BCMPCIE)
 			case DUMP_BUF_ATTR_EXT_TRAP :
@@ -9244,6 +9254,10 @@ static int wl_cfgvendor_dbg_get_ring_data(struct wiphy *wiphy,
 		dhd_pub->skip_memdump_map_read = true;
 		WL_MEM(("Doing dump_start op for ring_id %d ring:%s\n",
 			ring_id, ring_name));
+#ifdef DHD_TREAT_D3ACKTO_AS_LINKDWN
+		WL_ERR(("%s: set no_pcie_access_during_dump\n", __func__));
+		dhd_pub->no_pcie_access_during_dump = TRUE;
+#endif /* DHD_TREAT_D3ACKTO_AS_LINKDWN */
 		dhd_log_dump_vendor_trigger(dhd_pub);
 	}
 
@@ -10336,6 +10350,9 @@ wl_cfgvendor_apf_set_filter(struct wiphy *wiphy,
 				if (nla_len(iter) == sizeof(uint32) && !program_len) {
 					program_len = nla_get_u32(iter);
 				} else {
+					WL_ERR(("program len %d is invalid/"
+						"already initialised\n",
+						nla_len(iter)));
 					ret = -EINVAL;
 					goto exit;
 				}
@@ -10385,6 +10402,11 @@ wl_cfgvendor_apf_set_filter(struct wiphy *wiphy,
 	}
 
 	ret = dhd_dev_apf_add_filter(ndev, program, program_len);
+	if (unlikely(ret)) {
+		WL_ERR(("APF add filter failed, ret=%d\n", ret));
+		goto exit;
+	}
+	WL_INFORM_MEM(("Success to add APF filter program, program_len=%d\n", program_len));
 
 exit:
 	if (program) {
