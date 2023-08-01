@@ -372,10 +372,8 @@ ifneq ($(CONFIG_SOC_GOOGLE),)
     DHDCFLAGS += -DWL_MLO_BKPORT_NEW_PORT_AUTH
     # CROSS AKM related back port changes
     DHDCFLAGS += -DWL_CROSS_AKM_BKPORT
-    ifeq ($(BCMDHD),4390)
-        # ch_switch_notify back port changes
-        DHDCFLAGS += -DWL_CH_SWITCH_BKPORT
-    endif
+    # ch_switch_notify back port changes
+    DHDCFLAGS += -DWL_CH_SWITCH_BKPORT
     DHDCFLAGS := $(filter-out -DDHD_DUMP_FILE_WRITE_FROM_KERNEL ,$(DHDCFLAGS))
 endif
 
