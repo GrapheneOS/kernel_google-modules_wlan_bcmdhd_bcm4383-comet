@@ -471,6 +471,7 @@ typedef struct dhd_bus {
 	uint32 d0_inform_in_use_cnt;
 #ifdef DHD_TREAT_D3ACKTO_AS_LINKDWN
 	uint32 d3ackto_as_linkdwn_cnt;
+	uint32 iovarto_as_linkdwn_cnt;
 #endif
 	uint8 force_suspend;
 	uint8 is_linkdown;
@@ -577,9 +578,9 @@ typedef struct dhd_bus {
 #if defined(PCIE_OOB) || defined(PCIE_INB_DW)
 	bool  ds_enabled;
 #endif
-#ifdef DHD_PCIE_RUNTIMEPM
+#ifdef OEM_ANDROID
 	bool chk_pm;	/* To avoid counting of wake up from Runtime PM */
-#endif /* DHD_PCIE_RUNTIMEPM */
+#endif /* OEM_ANDROID */
 #if defined(PCIE_INB_DW)
 	bool calc_ds_exit_latency;
 	bool deep_sleep; /* Indicates deep_sleep set or unset by the DHD IOVAR deep_sleep */
@@ -974,6 +975,7 @@ int bcmpcie_set_get_wake_pkt_dump(struct dhd_bus *bus, int wake_pkt_dump);
 extern void dhd_dump_bus_mmio_trace(dhd_bus_t *bus, struct bcmstrbuf *strbuf);
 #endif /* defined(DHD_MMIO_TRACE) */
 extern void dhd_dump_bus_ds_trace(dhd_bus_t *bus, struct bcmstrbuf *strbuf);
+void dhd_dump_ds_trace_console(dhd_pub_t *dhdp);
 extern bool dhdpcie_bus_get_pcie_hostready_supported(dhd_bus_t *bus);
 extern void dhd_bus_hostready(struct  dhd_bus *bus);
 #ifdef PCIE_OOB

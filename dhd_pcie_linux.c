@@ -87,9 +87,9 @@
 
 #include <dhd_plat.h>
 
-#if defined(WBRC) && defined(WBRC_TEST)
+#if defined(WBRC)
 #include <wb_regon_coordinator.h>
-#endif /* WBRC && WBRC_TEST */
+#endif /* WBRC */
 
 #define PCI_CFG_RETRY		10		/* PR15065: retry count for pci cfg accesses */
 #define OS_HANDLE_MAGIC		0x1234abcd	/* Magic # to recognize osh */
@@ -205,7 +205,7 @@ static int dhdpcie_resume_host_dev(dhd_bus_t *bus);
 static int dhdpcie_suspend_host_dev(dhd_bus_t *bus);
 static int dhdpcie_resume_dev(struct pci_dev *dev);
 static int dhdpcie_suspend_dev(struct pci_dev *dev);
-#ifdef DHD_PCIE_RUNTIMEPM
+#ifdef OEM_ANDROID
 static int dhdpcie_pm_suspend(struct device *dev);
 static int dhdpcie_pm_prepare(struct device *dev);
 static int dhdpcie_pm_resume(struct device *dev);
@@ -219,7 +219,7 @@ static int dhdpcie_pci_suspend(struct device * dev);
 static int dhdpcie_pci_resume(struct device * dev);
 static int dhdpcie_pci_resume_early(struct device * dev);
 #endif /* DHD_PCIE_NATIVE_RUNTIMEPM */
-#endif /* DHD_PCIE_RUNTIMEPM */
+#endif /* OEM_ANDROID */
 
 #ifdef DHD_PCIE_NATIVE_RUNTIMEPM
 static int dhdpcie_pm_runtime_suspend(struct device * dev);
@@ -262,7 +262,7 @@ static struct pci_device_id dhdpcie_pci_devid[] __devinitdata = {
 MODULE_DEVICE_TABLE(pci, dhdpcie_pci_devid);
 
 /* Power Management Hooks */
-#ifdef DHD_PCIE_RUNTIMEPM
+#ifdef OEM_ANDROID
 static const struct dev_pm_ops dhd_pcie_pm_ops = {
 	.prepare = dhdpcie_pm_prepare,
 	.suspend = dhdpcie_pm_suspend,
@@ -282,7 +282,7 @@ static const struct dev_pm_ops dhd_pcie_pm_ops = {
 	.resume	= dhdpcie_pci_resume,
 	.resume_early = dhdpcie_pci_resume_early,
 };
-#endif /* DHD_PCIE_RUNTIMEPM */
+#endif /* OEM_ANDROID */
 
 static struct pci_driver dhdpcie_driver = {
 	node:		{&dhdpcie_driver.node, &dhdpcie_driver.node},
@@ -801,7 +801,7 @@ dhd_bus_aer_config(dhd_bus_t *bus)
 	}
 }
 
-#ifdef DHD_PCIE_RUNTIMEPM
+#ifdef OEM_ANDROID
 static int dhdpcie_pm_suspend(struct device *dev)
 {
 	int ret = 0;
@@ -1052,7 +1052,7 @@ static int dhdpcie_pci_resume(struct device *dev)
 	return ret;
 }
 
-#endif /* DHD_PCIE_RUNTIMEPM */
+#endif /* OEM_ANDROID */
 #ifdef DHD_PCIE_NATIVE_RUNTIMEPM
 static int dhdpcie_set_suspend_resume(dhd_bus_t *bus, bool state, bool byint)
 #else
@@ -2244,6 +2244,10 @@ int dhdpcie_init(struct pci_dev *pdev)
 	dhdpcie_smmu_info_t	*dhdpcie_smmu_info = NULL;
 #endif /* USE_SMMU_ARCH_MSM */
 	int ret = 0;
+#if defined(WBRC) && defined(BCMDHD_MODULAR)
+	int wbrc_ret = 0;
+	uint16 chipid = 0;
+#endif /* WBRC && BCMDHD_MODULAR */
 
 	do {
 		/* osl attach */
@@ -2312,8 +2316,8 @@ int dhdpcie_init(struct pci_dev *pdev)
 
 #ifdef DHD_SET_PCIE_DMA_MASK_FOR_GS101
 		/* S.SLSI PCIe DMA engine cannot support 64 bit bus address. Hence, set 36 bit */
-		if (pci_set_dma_mask(pdev, DMA_BIT_MASK(DHD_PCIE_DMA_MASK_FOR_GS101)) ||
-			pci_set_consistent_dma_mask(pdev,
+		if (DHD_DMA_SET_MASK(pdev, DMA_BIT_MASK(DHD_PCIE_DMA_MASK_FOR_GS101)) ||
+			DHD_DMA_SET_COHERENT_MASK(pdev,
 				DMA_BIT_MASK(DHD_PCIE_DMA_MASK_FOR_GS101))) {
 			DHD_ERROR(("%s: DMA set %d bit mask failed.\n",
 				__FUNCTION__, DHD_PCIE_DMA_MASK_FOR_GS101));
@@ -2323,8 +2327,8 @@ int dhdpcie_init(struct pci_dev *pdev)
 
 #ifdef BOARD_STB
 #define DHD_PCIE_DMA_MASK_FOR_STB 64
-		if (pci_set_dma_mask(pdev, DMA_BIT_MASK(DHD_PCIE_DMA_MASK_FOR_STB)) ||
-			pci_set_consistent_dma_mask(pdev,
+		if (DHD_DMA_SET_MASK(pdev, DMA_BIT_MASK(DHD_PCIE_DMA_MASK_FOR_STB)) ||
+			DHD_DMA_SET_COHERENT_MASK(pdev,
 				DMA_BIT_MASK(DHD_PCIE_DMA_MASK_FOR_STB))) {
 			DHD_ERROR(("%s: DMA set %d bit mask failed.\n",
 				__FUNCTION__, DHD_PCIE_DMA_MASK_FOR_STB));
@@ -2450,12 +2454,28 @@ int dhdpcie_init(struct pci_dev *pdev)
 			bus->dhd->mac.octet[2] = 0x4C;
 		}
 
+#if defined(WBRC) && defined(BCMDHD_MODULAR)
+		wbrc_ret = wbrc_init();
+		chipid = dhd_get_chipid(bus);
+		BCM_REFERENCE(chipid);
+#endif /* WBRC && BCMDHD_MODULAR */
+
 		/* Attach to the OS network interface */
 		DHD_TRACE(("%s(): Calling dhd_register_if() \n", __FUNCTION__));
 		if (dhd_attach_net(bus->dhd, TRUE)) {
 			DHD_ERROR(("%s(): ERROR.. dhd_register_if() failed\n", __FUNCTION__));
 			break;
 		}
+
+#if defined(WBRC) && defined(BCMDHD_MODULAR)
+		if (!wbrc_ret) {
+#ifdef WBRC_HW_QUIRKS
+			wl2wbrc_wlan_init(bus->dhd, chipid);
+#else
+			wl2wbrc_wlan_init(bus->dhd);
+#endif /* WBRC_HW_QUIRKS */
+		}
+#endif /* WBRC && BCMDHD_MODULAR */
 
 		dhdpcie_init_succeeded = TRUE;
 #if defined(CONFIG_ARCH_MSM) && defined(CONFIG_SEC_PCIE_L1SS)
@@ -3160,10 +3180,10 @@ static irqreturn_t wlan_oob_irq(int irq, void *data)
 
 	bus->oob_intr_count++;
 #ifdef DHD_WAKE_STATUS
-#ifdef DHD_PCIE_RUNTIMEPM
+#ifdef OEM_ANDROID
 	/* This condition is for avoiding counting of wake up from Runtime PM */
 	if (bus->chk_pm)
-#endif /* DHD_PCIE_RUNTIMPM */
+#endif /* OEM_ANDROID */
 	{
 		bcmpcie_set_get_wake(bus, 1);
 	}

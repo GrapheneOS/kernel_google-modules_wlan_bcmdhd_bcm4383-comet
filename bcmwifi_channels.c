@@ -31,7 +31,6 @@
 #ifdef BCMDRIVER
 #include <osl.h>
 #define strtoul(nptr, endptr, base) bcm_strtoul((nptr), (endptr), (base))
-#define tolower(c) (bcm_isupper((c)) ? ((c) + 'a' - 'A') : (c))
 #else
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,7 +46,7 @@
 
 #include <bcmwifi_channels.h>
 
-#if defined(WIN32) && (defined(BCMDLL) || defined(WLMDLL))
+#if defined(WIN32) && (defined(BCMDLL) || defined(WLMDLL) || defined(_CONSOLE))
 #include <bcmstdlib.h>	/* For wlexe/Makefile.wlm_dll */
 #endif
 
@@ -67,9 +66,9 @@
  * <channel>:
  *      channel number of the 20MHz channel,
  *      or primary 20 MHz channel of 40MHz, 80MHz, 160MHz, 80+80MHz,
- *      320MHz, or 160+160MHz channels.
+ *      or 320MHz channels.
  * <bandwidth>:
- *      (optional) 20, 40, 80, 160, 80+80, 320, or 160+160. Default value is 20.
+ *      (optional) 20, 40, 80, 160, 80+80, or 320. Default value is 20.
  * <primary-sideband>:
  *      'u' or 'l' (only for 2.4GHz band 40MHz)
  *
@@ -84,7 +83,7 @@
  *       position in the wide bandwidth channel.
  * <1st-channel-segment>
  * <2nd-channel-segment>:
- *       Required for 80+80 or 160+160, otherwise not allowed.
+ *       Required for 80+80, otherwise not allowed.
  *       These fields specify the center channel of the first and the second 80MHz
  *       or 160MHz channels.
  *
@@ -128,7 +127,7 @@
 static const char *wf_chspec_bw_str[] =
 {
 	"320",
-	"160+160",
+	"160+160",	/* NA */
 	"20",
 	"40",
 	"80",
@@ -258,10 +257,8 @@ static uint wf_6g_get_center_chan_from_primary(uint primary_channel, chanspec_bw
 uint
 wf_bw_chspec_to_mhz(chanspec_t chspec)
 {
-	uint bw;
-
-	bw = (chspec & WL_CHANSPEC_BW_MASK) >> WL_CHANSPEC_BW_SHIFT;
-	return (bw >= WF_NUM_BW ? 0 : wf_chspec_bw_mhz[bw]);
+	uint bwidx = WL_CHSPEC_BW(chspec);
+	return (bwidx >= WF_NUM_BW ? 0 : wf_chspec_bw_mhz[bwidx]);
 }
 
 /* bw in MHz, return the channel count from the center channel to the
@@ -753,7 +750,7 @@ wf_chspec_aton(const char *a)
 		}
 	}
 
-	/* check for 80+80 or 160+160 */
+	/* check for 80+80 */
 	if (c == '+') {
 		return 0;
 	}
@@ -1099,7 +1096,7 @@ wf_chanspec_iter_init(wf_chanspec_iter_t *iter, chanspec_band_t band, chanspec_b
 	 * If the validation fails then the iterator will return INVCHANSPEC as the current
 	 * chanspec, and wf_chanspec_iter_next() will return FALSE.
 	 */
-	memset(iter, 0, sizeof(*iter));
+	bzero(iter, sizeof(*iter));
 	iter->state = WF_ITER_DONE;
 	iter->chanspec = INVCHANSPEC;
 
@@ -1575,13 +1572,6 @@ wf_valid_20MHz_chan(uint channel, chanspec_band_t band)
 		}
 
 		if (i == num_ch) {
-			/* check for channel 165 which is not the side band
-			 * of 40MHz 5G channel
-			 */
-			if (channel == 165) {
-				i = 0;
-			}
-
 			/* check for legacy JP channels on failure */
 			if (channel == 34 || channel == 38 ||
 			    channel == 42 || channel == 46) {
@@ -1594,7 +1584,6 @@ wf_valid_20MHz_chan(uint channel, chanspec_band_t band)
 			return TRUE;
 		}
 	}
-
 	else if (band == WL_CHANSPEC_BAND_6G) {
 		/* Use the simple pattern of 6GHz 20MHz channels for validity check */
 		if ((channel >= CH_MIN_6G_CHANNEL &&
@@ -2262,12 +2251,12 @@ BCMFASTPATH(wf_chspec_primary20_chan)(chanspec_t chspec)
  * @param	chspec    input chanspec
  *
  * @return Returns the bandwidth string:
- *         "320", "160+160", "20", "40", "80", "160", "80+80",
+ *         "320", "20", "20", "40", "80", "160", "80+80",
  */
 const char *
 BCMRAMFN(wf_chspec_to_bw_str)(chanspec_t chspec)
 {
-	return wf_chspec_bw_str[(CHSPEC_BW(chspec) >> WL_CHANSPEC_BW_SHIFT)];
+	return wf_chspec_bw_str[WL_CHSPEC_BW(chspec)];
 }
 
 /**
@@ -2709,7 +2698,7 @@ wf_chspec_secondary80_channel(chanspec_t chanspec)
 }
 
 /*
- * Returns the chanspec for the primary 80MHz sub-band of a 320MHz or 160+160MHz or 160MHz or
+ * Returns the chanspec for the primary 80MHz sub-band of a 320MHz or 160MHz or
  * 80+80MHz channel
  */
 chanspec_t
@@ -2869,7 +2858,7 @@ wf_chspec_primary160_channel(chanspec_t chanspec)
 }
 
 /*
- * Returns the chanspec for the primary 160MHz sub-band of an 320MHz or 160+160 channel
+ * Returns the chanspec for the primary 160MHz sub-band of an 320MHz channel
  */
 chanspec_t
 wf_chspec_primary160_chspec(chanspec_t chspec)
@@ -2928,7 +2917,7 @@ wf_chspec_secondary160_channel(chanspec_t chanspec)
 }
 
 /*
- * Returns the chanspec for the secondary 160MHz sub-band of an 320MHz or 160+160 channel
+ * Returns the chanspec for the secondary 160MHz sub-band of an 320MHz channel
  */
 chanspec_t
 wf_chspec_secondary160_chspec(chanspec_t chspec)
@@ -3049,7 +3038,8 @@ channel_bw_to_width(chanspec_t chspec)
 }
 
 
-uint wf_chspec_first_20_sb(chanspec_t chspec)
+uint
+wf_chspec_first_20_sb(chanspec_t chspec)
 {
 	uint8 cc = wf_chspec_center_channel(chspec);
 #if defined(WL_BW320MHZ)

@@ -1010,6 +1010,7 @@ dhd_pktlog_filter_info(dhd_pktlog_filter_t *filter)
 
 	return BCME_OK;
 }
+
 bool
 dhd_pktlog_filter_matched(dhd_pktlog_filter_t *filter, char *data, uint32 pktlog_case)
 {
@@ -1549,7 +1550,7 @@ dhd_pktlog_dump_write_file(dhd_pub_t *dhdp)
 {
 	struct file *w_pcap_fp = NULL;
 	uint32 file_mode;
-	mm_segment_t fs;
+	MM_SEGMENT_T fs;
 	char pktlogdump_path[128];
 	int ret = BCME_OK;
 

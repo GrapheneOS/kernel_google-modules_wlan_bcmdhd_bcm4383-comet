@@ -100,6 +100,7 @@ typedef struct chip_rev_table {
 chip_rev_table_t chip_revs[] = {
 	{0x4383, {"a0", "a1", "a3", "\0", "\0", "\0", "\0", "\0", "\0", "\0"}},
 	{0x4398, {"a0", "b0", "c0", "d0", "\0", "\0", "\0", "\0", "\0", "\0"}},
+	{0x4390, {"a0", "\0", "\0", "\0", "\0", "\0", "\0", "\0", "\0", "\0"}},
 	/* 4389 - not yet supported for now */
 	{0x4389, {"\0", "\0", "\0", "\0", "\0", "\0", "\0", "\0", "\0", "\0"}},
 };
@@ -142,6 +143,13 @@ vid_info_t vid_naming_table_4398[] = {
 	{ 3, { 0x55, 0x98, }, { "_USI_G5RN_9855_V15" } },
 	{ 3, { 0x55, 0x99, }, { "_USI_G5SN_9955_V15" } },
 	{ 3, { 0x57, 0x99, }, { "_USI_G5SN_9957_V17" } },
+};
+
+vid_info_t vid_naming_table_4390[] = {
+	/* 4390a0 */
+	{ 3, { 0x10, 0x63, }, { "_USI_G6BB_6310_V10" } },
+	{ 3, { 0x11, 0x63, }, { "_USI_G6BB_6311_V11" } },
+	{ 3, { 0x13, 0x63, }, { "_USI_G6BB_6313_V13" } },
 };
 
 #ifdef DHD_USE_CISINFO
@@ -341,6 +349,86 @@ otp_access_t otp_info[] = {
 	{0x4398, {0x18010324, 0x1801F618}, {0x0, 0xE4FF9DF}}
 };
 
+#ifdef DHD_USE_CISINFO
+/* File Location to keep each information */
+#ifdef OEM_ANDROID
+#define MACINFO "/data/.mac.info"
+#define MACINFO_EFS "/efs/wifi/.mac.info"
+#define CIDINFO PLATFORM_PATH".cid.info"
+#define CIDINFO_DATA "/data/.cid.info"
+#elif defined(PLATFORM_SLP)
+#define CIDINFO "/opt/etc/.cid.info"
+#define MACINFO "/opt/etc/.mac.info"
+#define MACINFO_EFS "/csa/.mac.info"
+#else
+#define MACINFO "/opt/.mac.info"
+#define MACINFO_EFS "/opt/.efs.mac.info"
+#define CIDINFO "/opt/.cid.info"
+#endif /* OEM_ANDROID */
+
+/* Definitions for MAC address */
+#define MAC_BUF_SIZE 20
+#define MAC_CUSTOM_FORMAT	"%02X:%02X:%02X:%02X:%02X:%02X"
+
+#define CIS_BUF_SIZE            1280
+#define DUMP_CIS_SIZE	48
+
+#define CIS_TUPLE_TAG_START		0x80
+#define CIS_TUPLE_TAG_VENDOR		0x81
+#define CIS_TUPLE_TAG_MACADDR		0x19
+#define CIS_TUPLE_TAG_BOARDTYPE		0x1b
+#define CIS_TUPLE_LEN_MACADDR		7
+#define CIS_DUMP_END                    0xff
+#define CIS_TUPLE_NULL                  0X00
+
+#ifdef CONFIG_BCMDHD_PCIE
+#if defined(BCM4361_CHIP) || defined(BCM4375_CHIP)
+#define OTP_OFFSET 208
+#elif defined(BCM4389_CHIP_DEF) || defined(BCM4398_CHIP_DEF)
+#define OTP_OFFSET 0
+#else
+#define OTP_OFFSET 128
+#endif /* BCM4361 | BCM4375 = 208, BCM4389 = 0, Others = 128 */
+#else /* CONFIG_BCMDHD_PCIE */
+#define OTP_OFFSET 12 /* SDIO */
+#endif /* CONFIG_BCMDHD_PCIE */
+
+unsigned char *g_cis_buf = NULL;
+
+/* Definitions for common interface */
+typedef struct tuple_entry {
+	struct list_head list;	/* head of the list */
+	uint32 cis_idx;		/* index of each tuples */
+} tuple_entry_t;
+
+extern int _dhd_set_mac_address(struct dhd_info *dhd, int ifidx, struct ether_addr *addr);
+#if defined(GET_MAC_FROM_OTP) || defined(USE_CID_CHECK)
+static tuple_entry_t *dhd_alloc_tuple_entry(dhd_pub_t *dhdp, const int idx);
+static void dhd_free_tuple_entry(dhd_pub_t *dhdp, struct list_head *head);
+static int dhd_find_tuple_list_from_otp(dhd_pub_t *dhdp, int req_tup,
+	unsigned char* req_tup_len, struct list_head *head);
+#endif /* GET_MAC_FROM_OTP || USE_CID_CHECK */
+
+/* otp region read/write information */
+typedef struct otp_rgn_rw_info {
+	uint8 rgnid;
+	uint8 preview;
+	uint8 integrity_chk;
+	uint16 rgnsize;
+	uint16 datasize;
+	uint8 *data;
+} otp_rgn_rw_info_t;
+
+/* otp region status information */
+typedef struct otp_rgn_stat_info {
+	uint8 rgnid;
+	uint16 rgnstart;
+	uint16 rgnsize;
+} otp_rgn_stat_info_t;
+
+typedef int (pack_handler_t)(void *ctx, uint8 *buf, uint16 *buflen);
+#endif /* DHD_USE_CISINFO */
+
 static INLINE int
 get_cis_tuple_chipidx(uint chipid)
 {
@@ -449,7 +537,7 @@ read_otp_from_bp(dhd_bus_t *bus, uint32 *data_buf)
 
 static int
 dhd_parse_board_information_bcm(dhd_bus_t *bus, int *boardtype,
-		unsigned char *vid, int *vid_length)
+		unsigned char *vid, int *vid_length, bool store_otp)
 {
 	int totlen, len;
 	uint32 *raw_data = NULL;
@@ -458,6 +546,12 @@ dhd_parse_board_information_bcm(dhd_bus_t *bus, int *boardtype,
 	int chipidx = 0;
 	int ret = 0;
 	uint otp_cis_sz = 0;
+
+	int cis_offset = OTP_OFFSET + sizeof(cis_rw_t);
+#if defined(BCM4389_CHIP_DEF) || defined(BCM4398_CHIP_DEF)
+	/* override OTP_OFFSET for 4389 */
+	cis_offset = OTP_OFFSET;
+#endif /* BCM4389_CHIP_DEF || BCM4398_CHIP_DEF */
 
 	chipidx = get_cis_tuple_chipidx(chipid);
 	if (chipidx < 0) {
@@ -480,6 +574,13 @@ dhd_parse_board_information_bcm(dhd_bus_t *bus, int *boardtype,
 		DHD_ERROR(("%s : Can't read the OTP\n", __FUNCTION__));
 		ret = BCME_NORESOURCE;
 		goto exit;
+	}
+
+	if (store_otp && g_cis_buf) {
+		if (memcpy_s(g_cis_buf + cis_offset, CIS_BUF_SIZE, raw_data, totlen) != 0) {
+			DHD_ERROR(("%s : memcpy of otp data to local cis buf failed !\n",
+				__FUNCTION__));
+		}
 	}
 
 	tuple = (cis_tuple_format_t *)raw_data;
@@ -874,7 +975,7 @@ dhd_get_fw_nvram_names(dhd_pub_t *dhdp, uint chipid, uint chiprev,
 	}
 
 	/* read Vendor ID (VID) from dongle OTP */
-	if (dhd_parse_board_information_bcm(bus, &board_type, vid, &vid_length)
+	if (dhd_parse_board_information_bcm(bus, &board_type, vid, &vid_length, TRUE)
 			!= BCME_OK) {
 		DHD_ERROR(("%s:failed to parse board information\n", __FUNCTION__));
 		/* If OTP is not programmed with vendor tuple,
@@ -898,6 +999,10 @@ dhd_get_fw_nvram_names(dhd_pub_t *dhdp, uint chipid, uint chiprev,
 			case BCM4397_CHIP_GRPID:
 				vid_info = vid_naming_table_4398;
 				vid_info_sz = ARRAYSIZE(vid_naming_table_4398);
+				break;
+			case BCM4390_CHIP_GRPID:
+				vid_info = vid_naming_table_4390;
+				vid_info_sz = ARRAYSIZE(vid_naming_table_4390);
 				break;
 			default:
 				DHD_ERROR(("%s: unrecognized chip id 0x%x !\n",
@@ -988,7 +1093,7 @@ dhd_find_naming_info_by_chip_rev(dhd_pub_t *dhdp, bool *is_murata_fem)
 
 	chip_rev = bus->sih->chiprev;
 
-	if (dhd_parse_board_information_bcm(bus, &board_type, vid, &vid_length)
+	if (dhd_parse_board_information_bcm(bus, &board_type, vid, &vid_length, FALSE)
 			!= BCME_OK) {
 		DHD_ERROR(("%s:failed to parse board information\n", __FUNCTION__));
 		return NULL;
@@ -1047,7 +1152,7 @@ concate_nvram_by_vid(dhd_pub_t *dhdp, char *nv_path, char *chipstr)
 			return BCME_ERROR;
 		}
 		bus = dhdp->bus;
-		if (dhd_parse_board_information_bcm(bus, &board_type, vid, &vid_length)
+		if (dhd_parse_board_information_bcm(bus, &board_type, vid, &vid_length, FALSE)
 				!= BCME_OK) {
 			DHD_ERROR(("%s:failed to parse board information\n", __FUNCTION__));
 			return BCME_ERROR;
@@ -1068,85 +1173,6 @@ concate_nvram_by_vid(dhd_pub_t *dhdp, char *nv_path, char *chipstr)
 #endif /* DHD_USE_CISINFO_FROM_OTP */
 
 #ifdef DHD_USE_CISINFO
-
-/* File Location to keep each information */
-#ifdef OEM_ANDROID
-#define MACINFO "/data/.mac.info"
-#define MACINFO_EFS "/efs/wifi/.mac.info"
-#define CIDINFO PLATFORM_PATH".cid.info"
-#define CIDINFO_DATA "/data/.cid.info"
-#elif defined(PLATFORM_SLP)
-#define CIDINFO "/opt/etc/.cid.info"
-#define MACINFO "/opt/etc/.mac.info"
-#define MACINFO_EFS "/csa/.mac.info"
-#else
-#define MACINFO "/opt/.mac.info"
-#define MACINFO_EFS "/opt/.efs.mac.info"
-#define CIDINFO "/opt/.cid.info"
-#endif /* OEM_ANDROID */
-
-/* Definitions for MAC address */
-#define MAC_BUF_SIZE 20
-#define MAC_CUSTOM_FORMAT	"%02X:%02X:%02X:%02X:%02X:%02X"
-
-#define CIS_BUF_SIZE            1280
-#define DUMP_CIS_SIZE	48
-
-#define CIS_TUPLE_TAG_START		0x80
-#define CIS_TUPLE_TAG_VENDOR		0x81
-#define CIS_TUPLE_TAG_MACADDR		0x19
-#define CIS_TUPLE_TAG_BOARDTYPE		0x1b
-#define CIS_TUPLE_LEN_MACADDR		7
-#define CIS_DUMP_END                    0xff
-#define CIS_TUPLE_NULL                  0X00
-
-#ifdef CONFIG_BCMDHD_PCIE
-#if defined(BCM4361_CHIP) || defined(BCM4375_CHIP)
-#define OTP_OFFSET 208
-#elif defined(BCM4389_CHIP_DEF) || defined(BCM4398_CHIP_DEF)
-#define OTP_OFFSET 0
-#else
-#define OTP_OFFSET 128
-#endif /* BCM4361 | BCM4375 = 208, BCM4389 = 0, Others = 128 */
-#else /* CONFIG_BCMDHD_PCIE */
-#define OTP_OFFSET 12 /* SDIO */
-#endif /* CONFIG_BCMDHD_PCIE */
-
-unsigned char *g_cis_buf = NULL;
-
-/* Definitions for common interface */
-typedef struct tuple_entry {
-	struct list_head list;	/* head of the list */
-	uint32 cis_idx;		/* index of each tuples */
-} tuple_entry_t;
-
-extern int _dhd_set_mac_address(struct dhd_info *dhd, int ifidx, struct ether_addr *addr);
-#if defined(GET_MAC_FROM_OTP) || defined(USE_CID_CHECK)
-static tuple_entry_t *dhd_alloc_tuple_entry(dhd_pub_t *dhdp, const int idx);
-static void dhd_free_tuple_entry(dhd_pub_t *dhdp, struct list_head *head);
-static int dhd_find_tuple_list_from_otp(dhd_pub_t *dhdp, int req_tup,
-	unsigned char* req_tup_len, struct list_head *head);
-#endif /* GET_MAC_FROM_OTP || USE_CID_CHECK */
-
-/* otp region read/write information */
-typedef struct otp_rgn_rw_info {
-	uint8 rgnid;
-	uint8 preview;
-	uint8 integrity_chk;
-	uint16 rgnsize;
-	uint16 datasize;
-	uint8 *data;
-} otp_rgn_rw_info_t;
-
-/* otp region status information */
-typedef struct otp_rgn_stat_info {
-	uint8 rgnid;
-	uint16 rgnstart;
-	uint16 rgnsize;
-} otp_rgn_stat_info_t;
-
-typedef int (pack_handler_t)(void *ctx, uint8 *buf, uint16 *buflen);
-
 /* Common Interface Functions */
 int
 dhd_alloc_cis(dhd_pub_t *dhdp)
