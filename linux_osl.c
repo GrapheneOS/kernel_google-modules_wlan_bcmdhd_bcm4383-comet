@@ -82,6 +82,10 @@ static void osl_dma_lock_init(osl_t *osh);
 #define DMA_LOCK_INIT(osh)	do { /* noop */ } while(0)
 #endif /* USE_DMA_LOCK */
 
+#ifdef NIC_PCIE_DEDICATED_WINDOWS
+uintptr __osl_v = 0;
+#endif /* NIC_PCIE_DEDICATED_WINDOWS */
+
 uint lmtest = FALSE;
 
 #ifdef DHD_MAP_LOGGING
