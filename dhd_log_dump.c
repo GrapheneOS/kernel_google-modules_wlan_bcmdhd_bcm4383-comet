@@ -42,6 +42,9 @@
 #if defined(WL_CFG80211)
 #include <wl_cfg80211.h>
 #endif
+#ifdef DHD_SSSR_DUMP
+#include <dhd_pcie_sssr_dump.h>
+#endif /* DHD_SSSR_DUMP */
 
 extern char dhd_version[];
 extern char fw_version[];

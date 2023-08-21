@@ -3770,51 +3770,6 @@ dhd_bus_check_driver_up(void)
 #define ADDR_SIZE 4u
 
 #ifdef BT_FW_DWNLD
-#ifdef WBRC_TEST
-static bool
-dhd_bt_fw_verify_read_back(dhd_pub_t *dhdp, const char* buf, size_t len)
-{
-	bool verify = true;
-	int ret = 0;
-	uint32 address = 0;
-	uint8 read_len;
-	uint8 read_buf[255];
-	uint8 *buf_ptr = (uint8 *)buf;
-
-	while (len > 0 && ret == 0) {
-		/* save data len */
-		read_len = (*(uint8_t *)buf_ptr) - ADDR_SIZE;
-		buf_ptr++;
-		len--;
-		/* save address */
-		address = *(uint32 *)(buf_ptr);
-		buf_ptr += ADDR_SIZE;
-		len -= ADDR_SIZE;
-		DHD_INFO(("%s: address 0x%X, write_len %u\n", __FUNCTION__,
-			address, read_len));
-		ret = dhdpcie_bus_membytes(dhdp->bus, FALSE, DHD_PCIE_MEM_BAR2,
-			(BT_BASE | address), read_buf, read_len);
-		/* compare */
-		if (0 != memcmp(buf_ptr, read_buf, read_len))
-		{
-			DHD_ERROR_RLMT(("%s: Read back failed at address : 0x%X, with len : %u\n",
-				__FUNCTION__, address, read_len));
-			verify = false;
-			break;
-		}
-
-		buf_ptr += read_len;
-		len -= read_len;
-	}
-
-	if (verify) {
-		DHD_ERROR(("%s: Read back verified successfully\n", __FUNCTION__));
-	}
-
-	return verify;
-}
-#endif /* WBRC_TEST */
-
 int
 dhd_bt_fw_dwnld_blob(void *wl_hdl, char* buf, size_t len)
 {
@@ -3876,18 +3831,7 @@ dhd_bt_fw_dwnld_blob(void *wl_hdl, char* buf, size_t len)
 		write_buf += write_len;
 		len -= write_len;
 
-#ifdef WBRC_TEST
-		if (wbrc_test_get_error() == WBRC_SLOWDOWN_BT_FW_DWNLD) {
-			OSL_DELAY(500000);
-		}
-#endif /* WBRC_TEST */
 	}
-
-#ifdef WBRC_TEST
-	if (wbrc_test_is_verify_bt_dwnld()) {
-		dhd_bt_fw_verify_read_back(dhdp, buf, total_len);
-	}
-#endif /* WBRC_TEST */
 
 	DHD_INFO(("%s: clearing pwr_req\n", __FUNCTION__));
 	dhd_bt_dwnld_pwr_req_clear(dhdp->bus);
