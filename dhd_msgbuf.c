@@ -52,6 +52,7 @@
 #include <pcie_core.h>
 #include <bcmpcie.h>
 #include <dhd_pcie.h>
+#include <dhd_plat.h>
 #ifdef DHD_TIMESYNC
 #include <dhd_timesync.h>
 #endif /* DHD_TIMESYNC */
@@ -86,6 +87,10 @@
 #if defined(DHD_MESH)
 #include <dhd_mesh_route.h>
 #endif /* defined(DHD_MESH) */
+
+#ifdef DHD_SSSR_DUMP
+#include <dhd_pcie_sssr_dump.h>
+#endif /* DHD_SSSR_DUMP */
 
 extern char dhd_version[];
 extern char fw_version[];
@@ -1793,8 +1798,21 @@ BCMFASTPATH(dhd_prot_d2h_sync_xorcsum)(dhd_pub_t *dhd, msgbuf_ring_t *ring,
 			 * complete message has arrived.
 			 */
 			if (msg->epoch == ring_seqnum) {
+#ifdef DHD_SKIP_XORCSUM_HIGH_TPUT
+				/* Based on customer request, to avoid tput regression
+				 * skip xorcsum for high tput case
+				 */
+				bool use_big_core = dhd_plat_pcie_enable_big_core();
+				if (use_big_core) {
+					prot_checksum = 0;
+				} else {
+					prot_checksum = bcm_compute_xor32((volatile uint32 *)msg,
+						num_words);
+				}
+#else
 				prot_checksum = bcm_compute_xor32((volatile uint32 *)msg,
-					num_words);
+						num_words);
+#endif /* DHD_SKIP_XORCSUM_HIGH_TPUT */
 				if (prot_checksum == 0U) { /* checksum is OK */
 					ring->seqnum++; /* next expected sequence number */
 					/* Check for LIVELOCK induce flag, which is set by firing
@@ -6197,9 +6215,7 @@ int dhd_sync_with_dongle(dhd_pub_t *dhd)
 	/* Post buffers for packet reception */
 	dhd_msgbuf_rxbuf_post(dhd, FALSE); /* alloc pkt ids */
 
-	dhd_process_cid_mac(dhd, TRUE);
 	ret = dhd_preinit_ioctls(dhd);
-	dhd_process_cid_mac(dhd, FALSE);
 
 #if defined(DHD_H2D_LOG_TIME_SYNC)
 #ifdef DHD_HP2P
@@ -9101,6 +9117,13 @@ dhd_prot_ioctcmplt_process(dhd_pub_t *dhd, void *msg)
 #else
 		ASSERT(0);
 #endif /* DHD_FW_COREDUMP */
+
+#ifdef OEM_ANDROID
+	/* Send HANG event to Android Framework for recovery */
+	dhd->hang_reason = HANG_REASON_IOCTL_TXNID_MISMATCH;
+	dhd_os_check_hang(dhd, 0, -EREMOTEIO);
+#endif /* OEM_ANDROID */
+
 		dhd_schedule_reset(dhd);
 		goto exit;
 	}
@@ -9620,6 +9643,7 @@ dhd_prot_event_process(dhd_pub_t *dhd, void *msg)
 	int ifidx = 0;
 	void* pkt;
 	dhd_prot_t *prot = dhd->prot;
+	msgbuf_ring_t *ring = &dhd->prot->d2hring_ctrl_cpln;
 
 	/* Event complete header */
 	evnt = (wlevent_req_msg_t *)msg;
@@ -9650,6 +9674,10 @@ dhd_prot_event_process(dhd_pub_t *dhd, void *msg)
 
 	if (!pkt) {
 		DHD_ERROR(("%s: pkt is NULL for pktid %d\n", __FUNCTION__, bufid));
+		DHD_ERROR(("%s: ring<%s> curr_rd<%d> rd<%d> wr<%d>\n",
+			__FUNCTION__, ring->name, ring->curr_rd, ring->rd, ring->wr));
+		dhd_prhex("dhd_prot_txstatus_process:", (volatile uchar *)msg,
+			D2HRING_CTRL_CMPLT_ITEMSIZE, DHD_ERROR_VAL);
 		return;
 	}
 
@@ -11728,6 +11756,7 @@ dhd_msgbuf_wait_ioctl_cmplt(dhd_pub_t *dhd, uint32 len, void *buf)
 #ifdef DHD_TREAT_D3ACKTO_AS_LINKDWN
 	if ((prot->ioctl_received == 0) && (timeleft == 0)) {
 		DHD_ERROR(("%s: Treating IOVAR timeout as PCIe linkdown !\n", __FUNCTION__));
+		dhd_plat_pcie_skip_config_set(TRUE);
 		dhd->bus->is_linkdown = 1;
 		dhd->bus->iovarto_as_linkdwn_cnt++;
 		dhd->hang_reason = HANG_REASON_PCIE_LINK_DOWN_RC_DETECT;

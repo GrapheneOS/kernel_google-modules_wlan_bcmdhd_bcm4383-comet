@@ -26,6 +26,17 @@
 
 #include <typedefs.h>
 
+#ifdef BCMDRIVER
+#define BCMWIFI_RSPEC_BW_COND	/* Conditional channel width support */
+#ifdef WL_BW320MHZ
+#define BCMWIFI_BW320MHZ	/* 320Mhz channel width support */
+#endif
+#endif /* BCMDRIVER */
+
+#ifndef BCMWIFI_RSPEC_BW_COND
+#define BCMWIFI_BW320MHZ
+#endif /* !BCMWIFI_RSPEC_BW_COND */
+
 /**
  * ===================================================================================
  * rate spec : holds rate and mode specific information required to generate a tx frame.
@@ -33,7 +44,7 @@
  * (in the lower byte) the upper 3 bytes primarily hold MIMO specific information
  * ===================================================================================
  */
-typedef uint32	ratespec_t;
+typedef uint32 ratespec_t;
 typedef uint32 ratespec_bw_t;
 
 /* Rate spec. definitions */
@@ -204,11 +215,11 @@ typedef uint32 ratespec_bw_t;
 #define RSPEC_IS40MHZ(rspec)	(RSPEC_BW(rspec) == WL_RSPEC_BW_40MHZ)
 #define RSPEC_IS80MHZ(rspec)	(RSPEC_BW(rspec) == WL_RSPEC_BW_80MHZ)
 #define RSPEC_IS160MHZ(rspec)	(RSPEC_BW(rspec) == WL_RSPEC_BW_160MHZ)
-#if defined(WL_BW320MHZ)
+#ifdef BCMWIFI_BW320MHZ
 #define RSPEC_IS320MHZ(rspec)	(RSPEC_BW(rspec) == WL_RSPEC_BW_320MHZ)
 #else
 #define RSPEC_IS320MHZ(rspec)	(FALSE)
-#endif /* WL_BW320MHZ */
+#endif /* BCMWIFI_BW320MHZ */
 
 #define WL_RSPEC_BW(rspec)	(RSPEC_BW(rspec) >> WL_RSPEC_BW_SHIFT)
 #define RSPEC_BW_REPL(rspec, rspec_bw)	\
