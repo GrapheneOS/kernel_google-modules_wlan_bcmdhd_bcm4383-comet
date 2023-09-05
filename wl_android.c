@@ -5557,6 +5557,7 @@ wbrc2wl_wlan_on_request(void *dhd_pub)
 				dhd_net_bus_suspend(dev);
 			}
 			g_wifi_on = TRUE;
+			g_wifi_accel_on = TRUE;
 		} else {
 			/* if wlan on fails, turn it off to keep it in a sane state */
 			DHD_ERROR(("%s: wlan on failed! turning wlan off...\n", __FUNCTION__));
