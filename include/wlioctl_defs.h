@@ -2738,8 +2738,15 @@ enum wl_cnt_xtlv_id {
 	WL_CNT_XTLV_WLC_HE_OMI = 0x104,		/* he omi counters */
 	WL_CNT_XTLV_WLC_RINIT_RSN_V2 = 0x105,	/**< WLC layer reinitreason extension */
 	WL_CNT_XTLV_WLC_MESH_PKT_V1 = 0x106,	/**< WLC layer Mesh pkt counters */
-	WL_CNT_XTLV_WLC_HE_TX = 0x107,		/* HE Tx counters */
-	WL_CNT_XTLV_WLC_HE_RX = 0x108,		/* HE Rx counters */
+	WL_CNT_XTLV_WLC_HE_TX = 0x107,		/* HE Tx counters for WL counters */
+	WL_CNT_XTLV_WLC_HE_RX = 0x108,		/* HE Rx counters for WL counters */
+	/* MLO: For use in ecounters: maps to wl_he_omi_cnt_v2_t */
+	WL_CNT_XTLV_WLC_HE_OMI_LNKSTAT_V2 = 0x109,
+	/* MLO: For use in ecounters: maps to wl_he_rx_cnt_ge88_v1_t */
+	WL_CNT_XTLV_WLC_HE_RX_LNKSTAT_V1 = 0x10a,
+	/* MLO: For use in ecounters: maps to wl_he_tx_cnt_ge88_v1_t */
+	WL_CNT_XTLV_WLC_HE_TX_LNKSTAT_V1 = 0x10b,
+
 	WL_CNT_XTLV_CNTV_LE10_UCODE = 0x200,	/**< wl counter ver < 11 UCODE MACSTAT */
 	WL_CNT_XTLV_LT40_UCODE_V1 = 0x300,	/**< corerev < 40 UCODE MACSTAT */
 	WL_CNT_XTLV_GE40_UCODE_V1 = 0x400,	/**< corerev >= 40 UCODE MACSTAT */
@@ -2767,7 +2774,10 @@ enum wl_cnt_xtlv_id {
 	/* For use in ecounters: maps to wl_cnt_ge88mcst_tx_u32_wrap_v1_t */
 	WL_CNT_XTLV_GE88_UCODE_TX_LNKSTAT_WRAP_U32_V1 = 0x1010,
 	/* For use in ecounters: maps to wl_cnt_ge88mcst_rx_u32_wrap_v1_t */
-	WL_CNT_XTLV_GE88_UCODE_RX_LNKSTAT_WRAP_U32_V1 = 0x1011
+	WL_CNT_XTLV_GE88_UCODE_RX_LNKSTAT_WRAP_U32_V1 = 0x1011,
+	/* scan aux core related additional counters */
+	WL_CNT_XTLV_SCANAUX_UCODE_V1 = 0x1012
+
 };
 
 /* bitmap for clm_flags iovar */

@@ -98,7 +98,7 @@ endif
 DHDCFLAGS += -DBCMUTILS_ERR_CODES -DUSE_NEW_RSPEC_DEFS -DBCM_FLEX_ARRAY
 DHDCFLAGS += -DPMU_NEW_ACCESS_MACROS -DCHIPC_NEW_ACCESS_MACROS \
   -DSR_NEW_ACCESS_MACROS -DPCIE_NEW_ACCESS_MACROS
-DHDCFLAGS += -Wall -Wstrict-prototypes -Wno-parentheses-equality -Dlinux -DLINUX -DBCMDRIVER \
+DHDCFLAGS += -Wall -Werror -Wstrict-prototypes -Wno-parentheses-equality -Dlinux -DLINUX -DBCMDRIVER \
 	-DBCMDONGLEHOST -DBCMDMA32 -DBCMFILEIMAGE \
 	-DDHDTHREAD -DSHOW_EVENTS -DWLP2P \
 	-DWIFI_ACT_FRAME -DARP_OFFLOAD_SUPPORT \
@@ -332,7 +332,7 @@ ifneq ($(CONFIG_SOC_GOOGLE),)
 	DHDCFLAGS += -DRESCHED_STREAK_MAX_HIGH=20
 	DHDCFLAGS += -DRESCHED_STREAK_MAX_LOW=2
 	DHDCFLAGS += -DCLEAN_IRQ_AFFINITY_HINT
-	DHDCFLAGS += -DIRQ_AFFINITY_BIG_CORE=7
+	DHDCFLAGS += -DIRQ_AFFINITY_BIG_CORE=8
 	DHDCFLAGS += -DIRQ_AFFINITY_SMALL_CORE=7
 	DHDCFLAGS += -DDHD_BUS_BUSY_TIMEOUT=5000
 	# MSI supported in GOOGLE SOC
@@ -351,7 +351,7 @@ ifneq ($(CONFIG_SOC_GOOGLE),)
         DHDCFLAGS += -DDHD_RECOVER_TIMEOUT
 	ifeq ($(BCMDHD),4398)
             # PCIE CPL TIMEOUT WAR
-            DHDCFLAGS += -DDHD_TREAT_D3ACKTO_AS_LINKDWN
+            # DHDCFLAGS += -DDHD_TREAT_D3ACKTO_AS_LINKDWN
 	endif
 	# Skip xorcsum for high throughput case
 	DHDCFLAGS += -DDHD_SKIP_XORCSUM_HIGH_TPUT
@@ -379,6 +379,8 @@ ifneq ($(CONFIG_SOC_GOOGLE),)
     ifeq ($(BCMDHD),4390)
         # ch_switch_notify back port changes
         DHDCFLAGS += -DWL_CH_SWITCH_BKPORT
+        # External auth request back port changes
+        # DHDCFLAGS += -DWL_EXT_AUTH_BKPORT
     endif
     DHDCFLAGS := $(filter-out -DDHD_DUMP_FILE_WRITE_FROM_KERNEL ,$(DHDCFLAGS))
 endif
@@ -682,7 +684,7 @@ DHDCFLAGS += -DESCAN_RESULT_PATCH
 DHDCFLAGS += -DDUAL_ESCAN_RESULT_BUFFER
 
 # NAN
-DHDCFLAGS += -DWL_NAN -DWL_NAN_DISC_CACHE -DWL_NANP2P -DNAN_DAM_ANDROID
+DHDCFLAGS += -DWL_NAN -DWL_NAN_DISC_CACHE -DWL_NANP2P -DNAN_DAM_ANDROID -DWL_NAN_6G
 # NAN 3.1 specific
 DHDCFLAGS += -DWL_NAN_INSTANT_MODE
 
@@ -997,9 +999,9 @@ endif
 
 DHDOFILES := dhd_pno.o dhd_common.o dhd_ip.o dhd_custom_gpio.o \
     dhd_linux.o dhd_linux_sched.o dhd_cfg80211.o dhd_linux_wq.o aiutils.o \
-    bcmevent.o bcmutils.o bcmwifi_channels.o hndpmu_dhd.o linux_osl.o linux_pkt.o \
-    siutils.o siutils_host.o wl_android.o wl_cfg80211.o wl_cfgscan.o wl_cfgp2p.o \
-	wl_cfgvif.o wl_cfg_btcoex.o wldev_common.o wl_linux_mon.o dhd_linux_platdev.o \
+    bcmevent.o bcmutils.o bcmwifi_channels.o bcmwifi_channels_shared.o hndpmu_dhd.o \
+	linux_osl.o linux_pkt.o siutils.o siutils_host.o wl_android.o wl_cfg80211.o wl_cfgscan.o \
+	wl_cfgp2p.o wl_cfgvif.o wl_cfg_btcoex.o wldev_common.o wl_linux_mon.o dhd_linux_platdev.o \
     dhd_pno.o dhd_rtt.o dhd_linux_pktdump.o wl_cfg_btcoex.o hnd_pktq.o bcmcapext.o\
     hnd_pktpool.o wl_cfgvendor.o bcmxtlv.o bcm_app_utils.o dhd_debug.o frag.o \
     dhd_debug_linux.o wl_cfgnan.o dhd_mschdbg.o bcmbloom.o dhd_dbg_ring.o bcmstdlib_s.o \
@@ -1056,7 +1058,7 @@ ifneq ($(CONFIG_BCMDHD_SDIO),)
 endif
 
 ifneq ($(CONFIG_BCMDHD_PCIE),)
-    DHDOFILES += dhd_pcie.o dhd_pcie_linux.o dhd_msgbuf.o dhd_flowring.o
+    DHDOFILES += dhd_pcie.o dhd_pcie_dumps.o dhd_pcie_linux.o dhd_msgbuf.o dhd_flowring.o
     DHDOFILES += pcie_core_host.o
 endif
 

@@ -2264,6 +2264,11 @@ dhd_set_aspm_enab(struct dhd_info *dhd, const char *buf, size_t count)
 #ifdef DHD_PCIE_RUNTIMEPM
 	dhdpcie_runtime_bus_wake(dhdp, TRUE, __builtin_return_address(0));
 #endif /* DHD_PCIE_RUNTIMEPM */
+	if (aspm_enab) {
+		DHD_ENABLE_RUNTIME_PM(dhdp);
+	} else {
+		DHD_DISABLE_RUNTIME_PM(dhdp);
+	}
 	dhd_bus_aspm_enable_rc_ep(dhdp->bus, aspm_enab);
 
 	return count;
@@ -2308,6 +2313,11 @@ dhd_set_l1ss_enab(struct dhd_info *dhd, const char *buf, size_t count)
 #ifdef DHD_PCIE_RUNTIMEPM
 	dhdpcie_runtime_bus_wake(dhdp, TRUE, __builtin_return_address(0));
 #endif /* DHD_PCIE_RUNTIMEPM */
+	if (l1ss_enab) {
+		DHD_ENABLE_RUNTIME_PM(dhdp);
+	} else {
+		DHD_DISABLE_RUNTIME_PM(dhdp);
+	}
 	dhd_bus_l1ss_enable_rc_ep(dhdp->bus, l1ss_enab);
 	return count;
 }
@@ -2611,8 +2621,6 @@ static struct dhd_attr dhd_attr_dhd_debug_data =
 __ATTR(dump_stateinfo, 0660, dhd_debug_dump_stateinfo, NULL);
 
 #ifdef WL_CFG80211
-#define _S(x) #x
-#define S(x) _S(x)
 #define SUBLOGLEVEL 20
 #define SUBLOGLEVELZ ((SUBLOGLEVEL) + (1))
 static const struct {
@@ -2683,7 +2691,7 @@ set_wl_debug_level(struct dhd_info *dhd, const char *buf, size_t count)
 		if (colon != NULL) {
 			*colon = ' ';
 		}
-		tokens = sscanf(token, "%"S(SUBLOGLEVEL)"s %u", sublog, &log_on);
+		tokens = sscanf(token, "%"BCM_STR(SUBLOGLEVEL)"s %u", sublog, &log_on);
 		if (colon != NULL)
 			*colon = ':';
 

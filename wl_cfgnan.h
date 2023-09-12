@@ -90,8 +90,6 @@
 #define NAME_TO_STR(name) #name
 #define NAN_ID_CTRL_SIZE ((NAN_MAXIMUM_ID_NUMBER/8) + 1)
 
-#define tolower(c) bcm_tolower(c)
-
 #define NMR2STR(a) (a)[0], (a)[1], (a)[2], (a)[3], (a)[4], (a)[5], (a)[6], (a)[7]
 #define NMRSTR "%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x"
 
@@ -794,7 +792,8 @@ typedef struct wl_nancfg
 	uint32 nan_ctrl2_flag1;
 	uint32 nan_ctrl2_flag2;
 	nan_hal_capabilities_t capabilities;
-	uint8  is_suspension_supported;
+	uint8 is_suspension_supported;
+	uint8 is_6g_nan_supported;
 } wl_nancfg_t;
 
 #define NAN_RTT_ENABLED(cfg) (wl_cfgnan_is_enabled(cfg) && \

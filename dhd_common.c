@@ -800,7 +800,7 @@ dhd_query_bus_erros(dhd_pub_t *dhdp)
 	}
 
 #ifdef PCIE_FULL_DONGLE
-	if (dhdp->d3ack_timeout_occured) {
+	if (dhdp->d3d0ack_timeout_occured) {
 		DHD_ERROR_RLMT(("%s: Resumed on timeout for previous D3ACK, cannot proceed\n",
 			__FUNCTION__));
 		ret = TRUE;
@@ -895,7 +895,7 @@ dhd_clear_all_errors(dhd_pub_t *dhd)
 	dhd->hang_reason = 0;
 	dhd->iovar_timeout_occured = 0;
 #ifdef PCIE_FULL_DONGLE
-	dhd->d3ack_timeout_occured = 0;
+	dhd->d3d0ack_timeout_occured = 0;
 	dhd->livelock_occured = 0;
 	dhd->pktid_audit_failed = 0;
 	dhd->pktid_invalid_occured = 0;
@@ -4532,6 +4532,7 @@ wl_show_roam_cache_update_event(const char *name, uint status,
 					(rmc_candidate_info_v1_t *)(val_xtlv->data);
 				candidate_info->ctl_channel = wf_channel2chspec(
 					candidate_info->ctl_channel, WL_CHANSPEC_BW_20);
+				BCM_FALLTHROUGH;
 			}
 			/* fall through */
 			case WL_RMC_RPT_XTLV_CANDIDATE_INFO_V2:
@@ -4743,30 +4744,50 @@ wl_show_host_event(dhd_pub_t *dhd_pub, wl_event_msg_t *event, void *event_data,
 		break;
 	case WLC_E_ROAM_START:
 		if (datalen >= sizeof(wlc_roam_start_event_t)) {
-			const wlc_roam_start_event_t *roam_start =
+			wlc_roam_start_event_t *roam_start =
 				(wlc_roam_start_event_t *)event_data;
-			const bcm_xtlv_t *xtlv;
+			uint16 len = roam_start->length;
+			uint8 *data = roam_start->xtlvs;
+			bcm_xtlv_t *xtlv;
 			const wlc_bcn_prot_counters_v1_t *cnt;
+
 			DHD_EVENT(("MACEVENT: %s %d, MAC %s, status %d,"
 				" reason %d, auth %d, current bss rssi %d\n",
 				event_name, event_type, eabuf, (int)status, (int)reason,
 				(int)auth_type, (int)roam_start->rssi));
 
-			if (datalen < sizeof(*roam_start) + BCM_XTLV_HDR_SIZE +	sizeof(*cnt)) {
+			if (datalen < sizeof(*roam_start) + BCM_XTLV_HDR_SIZE +
+			    sizeof(wlc_bcn_prot_counters_v1_t)) {
 				break;
 			}
-			xtlv = (const bcm_xtlv_t *)roam_start->xtlvs;
-			if ((xtlv->id != WL_ROAM_START_XTLV_BCNPROT_STATS) ||
-			     (xtlv->len < sizeof(*cnt))) {
-				DHD_ERROR(("MACEVENT: %s invalid xtlv (id=%d len=%d)\n",
-					event_name, xtlv->id, xtlv->len));
-				break;
+
+			while (len > BCM_XTLV_HDR_SIZE) {
+				xtlv = (bcm_xtlv_t *)data;
+				if (xtlv->id != WL_ROAM_START_XTLV_BCNPROT_STATS ||
+					xtlv->len < sizeof(wlc_bcn_prot_counters_v1_t)) {
+					break;
+				}
+				cnt = (wlc_bcn_prot_counters_v1_t *)xtlv->data;
+				if (cnt->version == BCN_PROT_COUNTERS_VERSION_1) {
+					DHD_EVENT(("EXTEVENT: no_en=%d no_mme=%d mic_fails=%d "
+						"replay_fails=%d errors_since_good_bcn=%d\n",
+						cnt->no_en_bit, cnt->no_mme_ie,
+						cnt->mic_fails, cnt->replay_fails,
+						cnt->errors_since_good_bcn));
+				} else if (cnt->version == BCN_PROT_COUNTERS_VERSION_2) {
+					const wlc_bcn_prot_counters_v2_t *cnt_v2;
+					cnt_v2 = (const wlc_bcn_prot_counters_v2_t *)xtlv->data;
+					DHD_EVENT(("EXTEVENT: link_idx:%d link_id:%d no_en=%d "
+						"no_mme=%d mic_fails=%d replay_fails=%d "
+						"errors_since_good_bcn=%d\n", cnt_v2->link_idx,
+						cnt_v2->link_id, cnt_v2->no_en_bit,
+						cnt_v2->no_mme_ie, cnt_v2->mic_fails,
+						cnt_v2->replay_fails,
+						cnt_v2->errors_since_good_bcn));
+				}
+				len -= (BCM_XTLV_HDR_SIZE + xtlv->len);
+				data += (BCM_XTLV_HDR_SIZE + xtlv->len);
 			}
-			cnt = (const wlc_bcn_prot_counters_v1_t *)xtlv->data;
-			DHD_EVENT(("MACEVENT: %s (no_en=%d no_mme=%d mic_fails=%d replay_fails=%d "
-				"errors_since_good_bcn=%d)\n", event_name, cnt->no_en_bit,
-				cnt->no_mme_ie, cnt->mic_fails, cnt->replay_fails,
-				cnt->errors_since_good_bcn));
 		} else {
 			DHD_EVENT(("MACEVENT: %s %d, MAC %s, status %d, reason %d, auth %d"
 				" ifidx %d cfgidx %d\n", event_name, event_type, eabuf,
@@ -6139,6 +6160,7 @@ wl_process_host_event(dhd_pub_t *dhd_pub, int *ifidx, void *pktdata, uint pktlen
 		}
 #endif /* PCIE_FULL_DONGLE */
 		/* falls through */
+		BCM_FALLTHROUGH;
 	case WLC_E_DEAUTH:
 	case WLC_E_DEAUTH_IND:
 	case WLC_E_DISASSOC:
@@ -6186,6 +6208,7 @@ wl_process_host_event(dhd_pub_t *dhd_pub, int *ifidx, void *pktdata, uint pktlen
 		}
 #endif /* DHD_POST_EAPOL_M1_AFTER_ROAM_EVT */
 		/* fall through */
+		BCM_FALLTHROUGH;
 	default:
 		*ifidx = dhd_ifname2idx(dhd_pub->info, event->ifname);
 		/* push up to external supp/auth */
@@ -9810,12 +9833,12 @@ dhd_event_logtrace_infobuf_pkt_process(dhd_pub_t *dhdp, void *pktbuf,
 	}
 	PKTPULL(dhdp->osh, pktbuf, sizeof(info_buf_payload_hdr_t));
 
-	/* Validate that the specified length isn't bigger than the
-	 * provided data.
-	 */
-	if (payload_hdr_length > PKTLEN(dhdp->osh, pktbuf)) {
-		DHD_ERROR(("%s: infobuf logtrace length is bigger"
-			" than actual buffer data\n", __FUNCTION__));
+	/* packet length must match remaining payload */
+	if (payload_hdr_length != PKTLEN(dhdp->osh, pktbuf)) {
+		DHD_ERROR(("%s: PKTLEN: %u payload_hdr_length: %u\n",
+			__FUNCTION__, PKTLEN(dhdp->osh, pktbuf), payload_hdr_length));
+		DHD_ERROR(("%s: infobuf logtrace length does not"
+			" match length of actual buffer data\n", __FUNCTION__));
 		goto exit;
 	}
 	dhd_dbg_trace_evnt_handler(dhdp, PKTDATA(dhdp->osh, pktbuf),
