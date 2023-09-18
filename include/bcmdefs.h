@@ -24,10 +24,6 @@
 #ifndef	_bcmdefs_h_
 #define	_bcmdefs_h_
 
-#ifndef BCM_FLEX_ARRAY
-#define BCM_FLEX_ARRAY  (1)
-#endif /* BCM_FLEX_ARRAY */
-
 /*
  * One doesn't need to include this file explicitly, gets included automatically if
  * typedefs.h is included.
@@ -57,6 +53,19 @@
 #define GCC_SUPPRESS_FALLTHROUGH_WARNING
 #endif
 
+/* Linux kenrel already defined "fallthrough" as macro
+ * so, GCC_SUPPRESS_FALLTHROUGH_WARNIN macro could not be used in driver
+ * GCC supports the __fallthrough__ attribute since 7.1.
+ * Clang supports the __fallthrough__ Statement Attributes since 10.0.0
+ */
+#if (defined(__GNUC__) && \
+	(__GNUC__ > 7 || (__GNUC__ == 7 && __GNUC_MINOR__ >= 1)) || \
+	(defined(__clang__) && __clang_major__ >= 10))
+#define BCM_FALLTHROUGH __attribute__ ((__fallthrough__))
+#else
+#define BCM_FALLTHROUGH
+#endif /* __GNUC__ */
+
 /* GNU GCC 4.6+ supports selectively turning off a warning.
  * Define these diagnostic macros to help suppress cast-qual warning
  * until all the work can be done to fix the casting issues.
@@ -73,15 +82,6 @@
 	_Pragma("GCC diagnostic push")			 \
 	_Pragma("GCC diagnostic ignored \"-Wnull-dereference\"")
 
-#if !defined(__clang__) || __clang_major__ >= 13
-#define GCC_DIAGNOSTIC_PUSH_SUPPRESS_FN_TYPE()           \
-	_Pragma("GCC diagnostic push")			 \
-	_Pragma("GCC diagnostic ignored \"-Wcast-function-type\"")
-#else
-#define GCC_DIAGNOSTIC_PUSH_SUPPRESS_FN_TYPE()           \
-	_Pragma("GCC diagnostic push")
-#endif // !__clang__ || __clang_major__ >= 13
-
 #define GCC_DIAGNOSTIC_POP()                             \
 	_Pragma("GCC diagnostic pop")
 
@@ -92,15 +92,33 @@
 	__pragma(warning(disable:4090))
 #define GCC_DIAGNOSTIC_PUSH_SUPPRESS_NULL_DEREF()	 \
 	__pragma(warning(push))
-#define GCC_DIAGNOSTIC_PUSH_SUPPRESS_FN_TYPE()           \
-	__pragma(warning(push))
 #define GCC_DIAGNOSTIC_POP()                             \
 	__pragma(warning(pop))
 #else
 #define GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST()
 #define GCC_DIAGNOSTIC_PUSH_SUPPRESS_NULL_DEREF()
-#define GCC_DIAGNOSTIC_PUSH_SUPPRESS_FN_TYPE()
 #define GCC_DIAGNOSTIC_POP()
+#endif   /* Diagnostic macros not defined */
+
+#if (defined(__GNUC__) && defined(STRICT_GCC_WARNINGS) && \
+	(__GNUC__ > 8 || (__GNUC__ == 8 && __GNUC_MINOR__ >= 1)) || \
+	defined(__clang__))
+
+#if !defined(__clang__) || __clang_major__ >= 13
+#define GCC_DIAGNOSTIC_PUSH_SUPPRESS_FN_TYPE()           \
+	_Pragma("GCC diagnostic push")			 \
+	_Pragma("GCC diagnostic ignored \"-Wcast-function-type\"")
+#else
+#define GCC_DIAGNOSTIC_PUSH_SUPPRESS_FN_TYPE()           \
+	_Pragma("GCC diagnostic push")
+#endif // !__clang__ || __clang_major__ >= 13
+
+#elif defined(_MSC_VER)
+
+#define GCC_DIAGNOSTIC_PUSH_SUPPRESS_FN_TYPE()           \
+	__pragma(warning(push))
+#else
+#define GCC_DIAGNOSTIC_PUSH_SUPPRESS_FN_TYPE()
 #endif   /* Diagnostic macros not defined */
 
 /* Macros to allow Coverity modeling contructs in source code */
@@ -878,6 +896,19 @@ extern uint32 gFWID;
 #else
 	#define UDCC_ENAB() (FALSE)
 #endif /* UDCC */
+
+#ifdef URB_MON_GIANT_PKT /* URB Mon giant packet enab macro  */
+	extern bool _urb_giantpkt_enab;
+#if defined(ROM_ENAB_RUNTIME_CHECK) || !defined(DONGLEBUILD)
+	#define URB_MON_GIANTPKT_ENAB() (_urb_giantpkt_enab)
+#elif defined(URB_MON_GIANT_PKT_DISABLED)
+	#define URB_MON_GIANTPKT_ENAB() (FALSE)
+#else
+	#define URB_MON_GIANTPKT_ENAB() (TRUE)
+#endif
+#else
+	#define URB_MON_GIANTPKT_ENAB() (FALSE)
+#endif /* URB_MON_GIANT_PKT */
 
 #ifdef TX_HISTOGRAM
 extern bool _tx_histogram_enabled;
