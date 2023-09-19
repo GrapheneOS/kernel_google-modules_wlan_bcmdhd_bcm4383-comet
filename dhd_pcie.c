@@ -2398,12 +2398,12 @@ dhd_update_chip_specific_tunables(dhd_pub_t *dhd)
 	uint16 chipid = si_chipid(bus->sih);
 	uint set_ring_size_version;
 
-	dhd->htput_support = FALSE;
 #ifdef FLOW_RING_PREALLOC
 	dhd->max_prealloc_flowrings = MAX_FLOW_RINGS_V1;
 #endif /* FLOW_RING_PREALLOC */
 
 	dhd->htput_support = FALSE;
+	dhd->htput_force_sta = FALSE;
 	set_ring_size_version = 1;
 
 	switch (chipid) {
@@ -2416,6 +2416,12 @@ dhd_update_chip_specific_tunables(dhd_pub_t *dhd)
 #ifdef FLOW_RING_PREALLOC
 			dhd->max_prealloc_flowrings = MAX_FLOW_RINGS_V2;
 #endif /* FLOW_RING_PREALLOC */
+			break;
+		/* Enable htput for 4383 even though its 80Mhz chip */
+		case BCM4383_CHIP_ID:
+			dhd->htput_support = TRUE;
+			dhd->htput_force_sta = TRUE;
+			set_ring_size_version = 2;
 			break;
 		case BCM4390_CHIP_GRPID:
 		case BCM4397_CHIP_GRPID:
