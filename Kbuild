@@ -357,6 +357,10 @@ ifneq ($(CONFIG_SOC_GOOGLE),)
 	DHDCFLAGS += -DDHD_SKIP_COREDUMP_OLDER_CHIPS
 	# Skip coredump for continousy pkt drop health check
 	DHDCFLAGS += -DSKIP_COREDUMP_PKTDROP_RXHC
+	# Boost host cpufreq to max for peak tput. default is false
+	DHDCFLAGS += -DDHD_HOST_CPUFREQ_BOOST
+	# Boost host cpufreq to max for peak tput. default is true
+	DHDCFLAGS += -DDHD_HOST_CPUFREQ_BOOST_DEFAULT_ENAB
 endif
 endif
 
