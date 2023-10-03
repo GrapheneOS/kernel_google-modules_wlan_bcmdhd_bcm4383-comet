@@ -1815,6 +1815,8 @@ wl_cfgvendor_set_hal_started(struct wiphy *wiphy,
 	struct net_device *ndev = wdev_to_wlc_ndev(wdev, cfg);
 	uint32 type;
 
+	cfg->hal_state = HAL_START_IN_PROG;
+
 	if (!data) {
 		WL_DBG(("%s,data is not available\n", __FUNCTION__));
 	} else {
@@ -1824,17 +1826,17 @@ wl_cfgvendor_set_hal_started(struct wiphy *wiphy,
 			if (type == SET_HAL_START_ATTRIBUTE_PRE_INIT) {
 				if (nla_len(data)) {
 					WL_INFORM(("%s, HAL version: %s\n", __FUNCTION__,
-							(char*)nla_data(data)));
+						(char*)nla_data(data)));
 				}
 				WL_INFORM(("%s, dhd_open start\n", __FUNCTION__));
 				ret = dhd_open(ndev);
 				if (ret != BCME_OK) {
 					WL_INFORM(("%s, dhd_open failed\n", __FUNCTION__));
-					return ret;
+					goto exit;
 				} else {
 					WL_INFORM(("%s, dhd_open succeeded\n", __FUNCTION__));
 				}
-				return ret;
+				goto exit;
 			}
 		} else {
 			WL_ERR(("invalid len %d\n", len));
@@ -1844,7 +1846,6 @@ wl_cfgvendor_set_hal_started(struct wiphy *wiphy,
 	RETURN_EIO_IF_NOT_UP(cfg);
 	WL_INFORM(("%s,[DUMP] HAL STARTED\n", __FUNCTION__));
 
-	cfg->hal_started = true;
 #ifdef DHD_FILE_DUMP_EVENT
 	dhd_set_dump_status(dhd, DUMP_READY);
 #endif /* DHD_FILE_DUMP_EVENT */
@@ -1859,10 +1860,17 @@ wl_cfgvendor_set_hal_started(struct wiphy *wiphy,
 			"STA MAC address \n", __FUNCTION__));
 		if ((ret = dhd_update_rand_mac_addr(dhd)) < 0) {
 			WL_ERR(("%s: failed to set macaddress, ret = %d\n", __FUNCTION__, ret));
-			return ret;
+			goto exit;
 		}
 	}
 #endif /* WL_STA_ASSOC_RAND */
+	cfg->hal_state = HAL_STARTED;
+
+	return ret;
+#if defined(WL_STA_ASSOC_RAND) || defined (WIFI_TURNON_USE_HALINIT)
+exit:
+#endif /* WL_STA_ASSOC_RAND || WIFI_TURNON_USE_HALINIT */
+	cfg->hal_state = HAL_IDLE;
 	return ret;
 }
 
@@ -1871,16 +1879,22 @@ wl_cfgvendor_stop_hal(struct wiphy *wiphy,
 		struct wireless_dev *wdev, const void  *data, int len)
 {
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
-#ifdef DHD_FILE_DUMP_EVENT
 	dhd_pub_t *dhd = (dhd_pub_t *)(cfg->pub);
-#endif /* DHD_FILE_DUMP_EVENT */
+	struct net_device *ndev = wdev_to_wlc_ndev(wdev, cfg);
 
-	cfg->hal_started = false;
+	cfg->hal_state = HAL_STOP_IN_PROG;
+
 #ifdef DHD_FILE_DUMP_EVENT
 	dhd_set_dump_status(dhd, DUMP_NOT_READY);
 #endif /* DHD_FILE_DUMP_EVENT */
 	WL_INFORM(("%s,[DUMP] HAL STOPPED\n", __FUNCTION__));
 
+	if (dhd->stop_in_progress) {
+		WL_INFORM(("dhd_stop in progress, skip\n"));
+	} else if (dhd->if_opened) {
+		dhd_stop(ndev);
+	}
+	cfg->hal_state = HAL_IDLE;
 	return BCME_OK;
 }
 #endif /* WL_CFG80211 */
@@ -6860,6 +6874,7 @@ wl_cfgvendor_nan_start_handler(struct wiphy *wiphy,
 	nan_hal_resp_t nan_req_resp;
 	uint32 nan_attr_mask = 0;
 	wl_nancfg_t *nancfg = cfg->nancfg;
+	dhd_pub_t *dhd = (dhd_pub_t *)(cfg->pub);
 
 	wdev = bcmcfg_to_prmry_wdev(cfg);
 	cmd_data = (nan_config_cmd_data_t *)MALLOCZ(cfg->osh, sizeof(*cmd_data));
@@ -6874,6 +6889,12 @@ wl_cfgvendor_nan_start_handler(struct wiphy *wiphy,
 	if (ret != BCME_OK) {
 		WL_ERR(("failed to disable nan, error[%d]\n", ret));
 		goto exit;
+	}
+
+	if (FW_SUPPORTED(dhd, sdb_modesw)) {
+		/* cancel scan to sync the mode for 4383 */
+		WL_DBG_MEM(("sdb_modesw: Aborting Scan for starting NAN\n"));
+		wl_cfgscan_cancel_scan(cfg);
 	}
 
 	bzero(&nan_req_resp, sizeof(nan_req_resp));
@@ -8845,49 +8866,49 @@ wl_cfgvendor_dbg_file_dump(struct wiphy *wiphy,
 #ifdef DHD_SSSR_DUMP
 #ifdef DHD_SSSR_DUMP_BEFORE_SR
 			case DUMP_BUF_ATTR_SSSR_C0_D11_BEFORE :
-				ret = dhd_sssr_dump_d11_buf_before(bcmcfg_to_prmry_ndev(cfg),
+				ret = dhd_sssr_dump_d11_buf_before(dhd_pub,
 					buf->data_buf[0], (uint32)buf->len, 0);
 				break;
 #endif /* DHD_SSSR_DUMP_BEFORE_SR */
 
 			case DUMP_BUF_ATTR_SSSR_C0_D11_AFTER :
-				ret = dhd_sssr_dump_d11_buf_after(bcmcfg_to_prmry_ndev(cfg),
+				ret = dhd_sssr_dump_d11_buf_after(dhd_pub,
 					buf->data_buf[0], (uint32)buf->len, 0);
 				break;
 
 #ifdef DHD_SSSR_DUMP_BEFORE_SR
 			case DUMP_BUF_ATTR_SSSR_C1_D11_BEFORE :
-				ret = dhd_sssr_dump_d11_buf_before(bcmcfg_to_prmry_ndev(cfg),
+				ret = dhd_sssr_dump_d11_buf_before(dhd_pub,
 					buf->data_buf[0], (uint32)buf->len, 1);
 				break;
 #endif /* DHD_SSSR_DUMP_BEFORE_SR */
 
 			case DUMP_BUF_ATTR_SSSR_C1_D11_AFTER :
-				ret = dhd_sssr_dump_d11_buf_after(bcmcfg_to_prmry_ndev(cfg),
+				ret = dhd_sssr_dump_d11_buf_after(dhd_pub,
 					buf->data_buf[0], (uint32)buf->len, 1);
 				break;
 
 #ifdef DHD_SSSR_DUMP_BEFORE_SR
 			case DUMP_BUF_ATTR_SSSR_C2_D11_BEFORE :
-				ret = dhd_sssr_dump_d11_buf_before(bcmcfg_to_prmry_ndev(cfg),
+				ret = dhd_sssr_dump_d11_buf_before(dhd_pub,
 					buf->data_buf[0], (uint32)buf->len, 2);
 				break;
 #endif /* DHD_SSSR_DUMP_BEFORE_SR */
 
 			case DUMP_BUF_ATTR_SSSR_C2_D11_AFTER :
-				ret = dhd_sssr_dump_d11_buf_after(bcmcfg_to_prmry_ndev(cfg),
+				ret = dhd_sssr_dump_d11_buf_after(dhd_pub,
 					buf->data_buf[0], (uint32)buf->len, 2);
 				break;
 
 #ifdef DHD_SSSR_DUMP_BEFORE_SR
 			case DUMP_BUF_ATTR_SSSR_DIG_BEFORE :
-				ret = dhd_sssr_dump_dig_buf_before(bcmcfg_to_prmry_ndev(cfg),
+				ret = dhd_sssr_dump_dig_buf_before(dhd_pub,
 					buf->data_buf[0], (uint32)buf->len);
 				break;
 #endif /* DHD_SSSR_DUMP_BEFORE_SR */
 
 			case DUMP_BUF_ATTR_SSSR_DIG_AFTER :
-				ret = dhd_sssr_dump_dig_buf_after(bcmcfg_to_prmry_ndev(cfg),
+				ret = dhd_sssr_dump_dig_buf_after(dhd_pub,
 					buf->data_buf[0], (uint32)buf->len);
 				break;
 #endif /* DHD_SSSR_DUMP */
@@ -9358,7 +9379,7 @@ static void wl_cfgvendor_dbg_ring_send_evt(void *ctx,
 	cfg = wiphy_priv(wiphy);
 
 	/* If wifi hal is not start, don't send event to wifi hal */
-	if (!cfg->hal_started) {
+	if (cfg->hal_state != HAL_STARTED) {
 		WL_CONS_ONLY_RLMT(("Hal is not started id:%d\n", ring_id));
 		return;
 	}

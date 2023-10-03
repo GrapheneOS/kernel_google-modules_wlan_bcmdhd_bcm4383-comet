@@ -57,7 +57,8 @@ typedef struct cis_tuple_addrs {
 cis_tuple_addr_t cis_tuple_addr_ranges[] = {
 	{0x4375, 0x18011120, 0x18011177},
 	{0x4389, 0x18011058, 0x180110AF},
-	{0x4398, 0x1801115C, 0x180111B3}
+	{0x4398, 0x1801115C, 0x180111B3},
+	{0x4390, 0x1801115C, 0x180111B3}
 };
 #define CIS_TUPLE_START_ADDR(chipidx) (cis_tuple_addr_ranges[(chipidx)].start_addr)
 #define CIS_TUPLE_END_ADDR(chipidx) (cis_tuple_addr_ranges[(chipidx)].end_addr)
@@ -343,12 +344,6 @@ typedef struct otp_access {
 	uint32 bpdata[2];
 } otp_access_t;
 
-otp_access_t otp_info[] = {
-/*      {chipid, {OTPCtrl1 addr, PMU minrsrcmask addr},	{OTPCtrl1 val, PMU minrsrcmask val} */
-	{0x4389, {0x18010324, 0x18012618}, {0x00fa0000, 0x0e4fffff}},
-	{0x4398, {0x18010324, 0x1801F618}, {0x0, 0xE4FF9DF}}
-};
-
 #ifdef DHD_USE_CISINFO
 /* File Location to keep each information */
 #ifdef OEM_ANDROID
@@ -442,25 +437,11 @@ get_cis_tuple_chipidx(uint chipid)
 	return -1;
 }
 
-static INLINE int
-get_otp_chipidx(uint chipid)
-{
-	int i = 0;
-	for (i = 0; i < ARRAYSIZE(otp_info); ++i) {
-		if (otp_info[i].chipid == chipid) {
-			return i;
-		}
-	}
-
-	return -1;
-}
-
 static int
 read_otp_from_bp(dhd_bus_t *bus, uint32 *data_buf)
 {
-	int int_val = 0, i = 0, bp_idx = 0;
-	uint32 org_boardtype_backplane_data[] = {0, 0};
-	int chipidx = 0, otpidx = 0;
+	int i = 0;
+	int chipidx = 0;
 	uint chipid = si_chipid(bus->sih);
 	uint32 cis_start_addr = 0;
 
@@ -472,38 +453,6 @@ read_otp_from_bp(dhd_bus_t *bus, uint32 *data_buf)
 	}
 	cis_start_addr = CIS_TUPLE_START_ADDR(chipidx);
 
-	otpidx = get_otp_chipidx(chipid);
-	if (otpidx < 0) {
-		DHD_ERROR(("%s: unable to find otp info for chipid 0x%x !\n",
-			__FUNCTION__, chipid));
-		return BCME_NOTFOUND;
-	}
-
-	for (bp_idx = 0; bp_idx < ARRAYSIZE(otp_info[otpidx].bpaddr); bp_idx++) {
-		/* Read OTP Control 1 and PMU min_rsrc_mask before writing */
-		if (si_backplane_access(bus->sih, otp_info[otpidx].bpaddr[bp_idx], sizeof(int),
-				&org_boardtype_backplane_data[bp_idx], TRUE) != BCME_OK) {
-			DHD_ERROR(("invalid size/addr combination\n"));
-			return BCME_ERROR;
-		}
-
-		/* Write new OTP and PMU configuration */
-		if (si_backplane_access(bus->sih, otp_info[otpidx].bpaddr[bp_idx], sizeof(int),
-				&otp_info[otpidx].bpdata[bp_idx], FALSE) != BCME_OK) {
-			DHD_ERROR(("invalid size/addr combination\n"));
-			return BCME_ERROR;
-		}
-
-		if (si_backplane_access(bus->sih, otp_info[otpidx].bpaddr[bp_idx], sizeof(int),
-				&int_val, TRUE) != BCME_OK) {
-			DHD_ERROR(("invalid size/addr combination\n"));
-			return BCME_ERROR;
-		}
-
-		DHD_INFO(("%s: boardtype_backplane_addr 0x%08x rdata 0x%04x\n",
-			__FUNCTION__,  otp_info[otpidx].bpaddr[bp_idx], int_val));
-	}
-
 	/* read tuple raw data */
 	for (i = 0; i < CIS_TUPLE_MAX_CNT(chipidx); i++) {
 		if (si_backplane_access(bus->sih, cis_start_addr + i * sizeof(uint32),
@@ -512,25 +461,6 @@ read_otp_from_bp(dhd_bus_t *bus, uint32 *data_buf)
 		}
 		DHD_INFO(("%s: tuple index %d, raw data 0x%08x\n", __FUNCTION__, i,  data_buf[i]));
 	}
-
-	for (bp_idx = 0; bp_idx < ARRAYSIZE(otp_info[otpidx].bpaddr); bp_idx++) {
-		/* Write original OTP and PMU configuration */
-		if (si_backplane_access(bus->sih,  otp_info[otpidx].bpaddr[bp_idx], sizeof(int),
-				&org_boardtype_backplane_data[bp_idx], FALSE) != BCME_OK) {
-			DHD_ERROR(("invalid size/addr combination\n"));
-			return BCME_ERROR;
-		}
-
-		if (si_backplane_access(bus->sih, otp_info[otpidx].bpaddr[bp_idx], sizeof(int),
-				&int_val, TRUE) != BCME_OK) {
-			DHD_ERROR(("invalid size/addr combination\n"));
-			return BCME_ERROR;
-		}
-
-		DHD_INFO(("%s: boardtype_backplane_addr 0x%08x rdata 0x%04x\n",
-			__FUNCTION__,  otp_info[otpidx].bpaddr[bp_idx], int_val));
-	}
-
 
 	return i * sizeof(uint32);
 }
@@ -1199,65 +1129,6 @@ dhd_clear_cis(dhd_pub_t *dhdp)
 		DHD_PRINT(("%s: Local CIS buffer is freed\n", __FUNCTION__));
 	}
 }
-
-#ifdef DHD_READ_CIS_FROM_BP
-int
-dhd_read_cis(dhd_pub_t *dhdp)
-{
-	int ret = 0, totlen = 0;
-	uint32 raw_data[CIS_TUPLE_MAX_COUNT];
-
-	int cis_offset = OTP_OFFSET + sizeof(cis_rw_t);
-#if defined(BCM4389_CHIP_DEF) || defined(BCM4398_CHIP_DEF)
-	/* override OTP_OFFSET for 4389 */
-	cis_offset = OTP_OFFSET;
-#endif /* BCM4389_CHIP_DEF || BCM4398_CHIP_DEF */
-
-	totlen = read_otp_from_bp(dhdp->bus, raw_data);
-	if (totlen == BCME_ERROR || totlen == 0) {
-		DHD_ERROR(("%s : Can't read the OTP\n", __FUNCTION__));
-		return BCME_ERROR;
-	}
-
-	(void)memcpy_s(g_cis_buf + cis_offset, CIS_BUF_SIZE, raw_data, totlen);
-	return ret;
-}
-#else
-int
-dhd_read_cis(dhd_pub_t *dhdp)
-{
-	int ret = 0;
-	cis_rw_t *cish;
-	int buf_size = CIS_BUF_SIZE;
-	int length = strlen("cisdump");
-
-	if (length >= buf_size) {
-		DHD_ERROR(("%s: check CIS_BUF_SIZE\n", __FUNCTION__));
-		return BCME_BADLEN;
-	}
-
-	/* Try reading out from CIS */
-	cish = (cis_rw_t *)(g_cis_buf + 8);
-	cish->source = 0;
-	cish->byteoff = 0;
-	cish->nbytes = buf_size;
-	strlcpy(g_cis_buf, "cisdump", buf_size);
-
-	ret = dhd_wl_ioctl_cmd(dhdp, WLC_GET_VAR, g_cis_buf, buf_size, 0, 0);
-	if (ret < 0) {
-		if (ret == BCME_UNSUPPORTED) {
-			DHD_ERROR(("%s: get cisdump, UNSUPPORTED\n", __FUNCTION__));
-		} else {
-			DHD_ERROR(("%s : get cisdump err(%d)\n",
-				__FUNCTION__, ret));
-		}
-		/* free local buf */
-		dhd_clear_cis(dhdp);
-	}
-
-	return ret;
-}
-#endif /* DHD_READ_CIS_FROM_BP */
 
 static int
 dhd_otp_process_iov_resp_buf(void *ctx, void *iov_resp, uint16 cmd_id,

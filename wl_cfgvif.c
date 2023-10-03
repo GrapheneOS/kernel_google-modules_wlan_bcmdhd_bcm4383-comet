@@ -1603,7 +1603,7 @@ wl_cfg80211_cleanup_virtual_ifaces(struct bcm_cfg80211 *cfg, bool rtnl_lock_reqd
 #endif /* WL_STATIC_IF */
 			{
 				dev_close(iter->ndev);
-				WL_DBG(("Cleaning up iface:%s \n", iter->ndev->name));
+				WL_INFORM(("Cleaning up iface:%s \n", iter->ndev->name));
 #if defined(WLAN_ACCEL_BOOT)
 				/* Trigger force reg_on to ensure clean up of virtual interface
 				* states in FW for any residual interface states, casued due to
@@ -1613,6 +1613,11 @@ wl_cfg80211_cleanup_virtual_ifaces(struct bcm_cfg80211 *cfg, bool rtnl_lock_reqd
 				" interface states in FW\n"));
 				dhd_dev_set_accel_force_reg_on(iter->ndev);
 #endif /* WLAN_ACCEL_BOOT */
+				if ((cfg->hal_state == HAL_START_IN_PROG) ||
+					(cfg->hal_state == HAL_STOP_IN_PROG)) {
+					/* hold the rtnl lock explicitly for vendor hal callers */
+					rtnl_lock_reqd = true;
+				}
 				wl_cfg80211_post_ifdel(iter->ndev, rtnl_lock_reqd, 0);
 			}
 		}
@@ -4721,6 +4726,12 @@ wl_cfg80211_start_ap(
 #endif /* APF */
 	}
 #endif /* BCMDONGLEHOST */
+
+	if (FW_SUPPORTED(dhd, sdb_modesw)) {
+		/* cancel scan to sync the mode for 4383 */
+		WL_DBG_MEM(("sdb_modesw: Aborting Scan for starting SoftAP\n"));
+		wl_cfgscan_cancel_scan(cfg);
+	}
 
 	/* disable TDLS */
 #ifdef WLTDLS

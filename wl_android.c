@@ -5492,12 +5492,6 @@ wbrc2wl_wlan_pcie_link_request(void *dhd_pub)
 		return BCME_NOTFOUND;
 	}
 
-#ifdef WBRC_TEST
-	if (wbrc_test_get_error() == WBRC_WLAN_PCIE_LINK_REQ_FAIL) {
-		return -1;
-	}
-#endif /* WBRC_TEST */
-
 	dhd_net_if_lock(dev);
 	if (!g_wifi_on) {
 		dhd_net_if_unlock(dev);
@@ -5546,12 +5540,6 @@ wbrc2wl_wlan_on_request(void *dhd_pub)
 		return BCME_NOTFOUND;
 	}
 
-#ifdef WBRC_TEST
-	if (wbrc_test_get_error() == WBRC_WLAN_FW_DWNLD_FAIL) {
-		return -1;
-	}
-#endif /* WBRC_TEST */
-
 	dhd_net_if_lock(dev);
 	if (!g_wifi_on) {
 		dhd_net_wifi_platform_set_power(dev, TRUE, WIFI_TURNON_DELAY);
@@ -5569,6 +5557,7 @@ wbrc2wl_wlan_on_request(void *dhd_pub)
 				dhd_net_bus_suspend(dev);
 			}
 			g_wifi_on = TRUE;
+			g_wifi_accel_on = TRUE;
 		} else {
 			/* if wlan on fails, turn it off to keep it in a sane state */
 			DHD_ERROR(("%s: wlan on failed! turning wlan off...\n", __FUNCTION__));
@@ -5629,16 +5618,7 @@ wbrc2wl_wlan_dwnld_bt_fw(void *dhd_pub, void *fw_blob, uint len)
 #endif /* DHD_PCIE_RUNTIMEPM */
 
 	/* download bt fw over pcie bar2 */
-#ifdef WBRC_TEST
-	if (wbrc_test_get_error() == WBRC_BT_FW_DWNLD_SIM) {
-		OSL_DELAY(2000000);
-		ret = 0;
-	} else {
-		ret = dhd_bt_fw_dwnld_blob(dhdp, fw_blob, len);
-	}
-#else
 	ret = dhd_bt_fw_dwnld_blob(dhdp, fw_blob, len);
-#endif /* WBRC_TEST */
 
 	if (ret && dhdp->do_chip_bighammer) {
 		ret = WBRC_WL_FATAL_ERR;
@@ -5647,12 +5627,6 @@ wbrc2wl_wlan_dwnld_bt_fw(void *dhd_pub, void *fw_blob, uint len)
 	} else if (!ret) {
 		DHD_PRINT(("%s: finished bt fw dwnld successfully\n", __FUNCTION__));
 	}
-
-#ifdef WBRC_TEST
-	if (wbrc_test_get_error() == WBRC_BT_FW_DWNLD_FAIL) {
-		ret = BCME_ERROR;
-	}
-#endif /* WBRC_TEST */
 
 	DHD_GENERAL_LOCK(dhdp, flags);
 	DHD_BUS_BUSY_CLEAR_IN_BT_FW_DWNLD(dhdp);
