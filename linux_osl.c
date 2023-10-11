@@ -1607,6 +1607,7 @@ osl_systztime_us(void)
 	return tzusec;
 }
 
+#ifdef CUSTOM_PREFIX
 char *
 osl_get_rtctime(void)
 {
@@ -1622,11 +1623,18 @@ osl_get_rtctime(void)
 			tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec/NSEC_PER_USEC);
 	return timebuf;
 }
+#endif /* CUSTOM_PREFIX */
 
 uint64
 osl_getcycles(void)
 {
+#if defined(__i386__) || defined(__x86_64__)
 	return get_cycles();
+#else
+	/* NOTE: For now keeping the implemenatation same as KUDU. */
+	OSL_PRINT(("osl_getcycles: Un-supported platform for get cycles\n"));
+	return 0;
+#endif /* i386 || x86_64 */
 }
 
 /*
@@ -2011,6 +2019,11 @@ osl_timer_init(osl_t *osh, const char *name, void (*fn)(ulong arg), ulong arg)
 		strcpy(t->name, name);
 	}
 #endif
+	/* suppress error the mismatched function pointer cast.
+	 * from void (*)(void *) to void (*)(ulong)
+	 * void pointer is compatible with ulong.
+	 */
+	GCC_DIAGNOSTIC_PUSH_SUPPRESS_FN_TYPE();
 
 	init_timer_compat(t->timer, (linux_timer_fn)fn, arg);
 

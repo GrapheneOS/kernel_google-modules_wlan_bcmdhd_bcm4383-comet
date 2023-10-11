@@ -323,7 +323,8 @@ typedef union bcm_event_msg_u {
 #define WLC_E_CSI_DATA			209	/* CSI data available */
 
 
-#define WLC_E_LAST			211	/* highest val + 1 for range checking */
+#define WLC_E_CSA_IGNORED		211	/* CSA IE is ignored */
+#define WLC_E_LAST			212	/* highest val + 1 for range checking */
 
 /* define an API for getting the string name of an event */
 extern const char *bcmevent_get_name(uint event_type);
@@ -637,6 +638,7 @@ typedef struct wl_event_sdb_trans {
 #define WLC_E_SUP_GTK_BAD_KEY_IDX	34u	/* Bad GTK key index */
 #define WLC_E_SUP_IGTK_BAD_KEY_IDX	35u	/* Bad IGTK key index */
 #define WLC_E_SUP_BIGTK_BAD_KEY_IDX	36u	/* Bad BIGTK key index */
+#define WLC_E_SUP_BCN_PROT_DISABLED_AP	37u	/* Beacon Protection is disabled in the AP */
 
 /* event msg for WLC_E_SUP_PTK_UPDATE */
 typedef struct wlc_sup_ptk_update {
@@ -1756,6 +1758,14 @@ typedef struct wl_csa_event {
 	uint32 switch_time;		/**< csa switch time: TSF + BI * count, msec */
 } wl_csa_event_t;
 
+/** Ignored CSA notification event */
+typedef struct wl_ignored_csa_event {
+	uint8 mode;		/**< value 0 or 1 */
+	uint8 count;	/**< count # of beacons before switching */
+	chanspec_t chspec;	/**< chanspec */
+	uint32 ignored_csa_cnt;	/* count for ignored CSA IE */
+} wl_ignored_csa_event_t;
+
 /* SIB sub events */
 
 /* Event structure for WLC_E_MSCS */
@@ -1773,9 +1783,10 @@ typedef struct wl_event_mscs {
 #define WL_MLO_LINK_INFO_EVENT_VERSION_1	(1u)
 
 typedef enum wl_mlo_link_info_opcode {
-	WL_MLO_LINK_INFO_OPCODE_ADD	= 1,	/* MLO links addition */
-	WL_MLO_LINK_INFO_OPCODE_DEL	= 2,	/* MLO links deletion */
-	WL_MLO_LINK_INFO_OPCODE_UPDATE	= 3	/* Asynchronous Upate of MLO links */
+	WL_MLO_LINK_INFO_OPCODE_ADD		= 1,	/* MLO links addition */
+	WL_MLO_LINK_INFO_OPCODE_DEL		= 2,	/* MLO links deletion */
+	WL_MLO_LINK_INFO_OPCODE_UPDATE		= 3,	/* Asynchronous Upate of MLO links */
+	WL_MLO_LINK_INFO_OPCODE_PREF_BAND	= 4	/* MLO preferred band */
 } wl_mlo_link_info_opcode_t;
 
 typedef enum wl_mlo_link_info_role {
@@ -1795,14 +1806,16 @@ typedef struct wl_mlo_per_link_info_v1 {
 
 /* MLO link information event structure */
 typedef struct wl_mlo_link_info_event_v1 {
-	uint16				version;	/* structure version */
-	uint16				length;		/* length of this structure */
-	uint8				opcode;		/* link opcode - wl_mlo_link_info_opcode */
-	uint8				role;		/* link role - wl_mlo_link_info_role */
-	struct ether_addr		mld_addr;	/* mld address */
-	uint8				num_links;	/* number of operative links */
-	uint8				PAD[3];
-	wl_mlo_per_link_info_v1_t	link_info[];	/* per link information */
+	uint16				version;	    /* structure version */
+	uint16				length;		    /* length of this structure */
+	uint8				opcode;		    /* link opcode - wl_mlo_link_info_opcode
+							     */
+	uint8				role;		    /* link role - wl_mlo_link_info_role */
+	struct ether_addr		mld_addr;	    /* mld address */
+	uint8				num_links;	    /* number of operative links */
+	uint8				pref_band_link_idx; /* MLO Preferred Band Link index */
+	uint8				PAD[2];
+	wl_mlo_per_link_info_v1_t	link_info[];	    /* per link information */
 } wl_mlo_link_info_event_v1_t;
 
 /* ===== C2C event definitions ===== */
