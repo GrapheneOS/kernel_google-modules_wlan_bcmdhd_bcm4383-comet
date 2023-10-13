@@ -97,6 +97,10 @@
 #include <wl_cfg_cellavoid.h>
 #endif /* WL_CELLULAR_CHAN_AVOID */
 
+#ifdef DHD_SSSR_DUMP
+#include <dhd_pcie_sssr_dump.h>
+#endif /* DHD_SSSR_DUMP */
+
 #ifdef WL_CFGVENDOR_CUST_ADVLOG
 static void wl_cfgvendor_custom_advlog_scan_start(void *plog, uint32 armcycle);
 static void wl_cfgvendor_custom_advlog_scan_cmpl(void *plog, uint32 armcycle);
@@ -3016,6 +3020,7 @@ wl_cfgvendor_set_bssid_blacklist(struct wiphy *wiphy,
 					err = -EINVAL;
 					goto exit;
 				}
+				WL_INFORM_MEM(("blacklist_flush:%d\n", flush));
 				break;
 			case GSCAN_ATTRIBUTE_BLACKLIST_BSSID:
 				if (num == 0 || !blacklist) {
@@ -3034,8 +3039,9 @@ wl_cfgvendor_set_bssid_blacklist(struct wiphy *wiphy,
 					err = -EINVAL;
 					goto exit;
 				}
-				memcpy(&(blacklist->ea[blacklist->count]), nla_data(iter),
-						ETHER_ADDR_LEN);
+				WL_INFORM_MEM(("blacklist mac_addr:" MACDBG "\n",
+					MAC2STRDBG(nla_data(iter))));
+				eacopy(nla_data(iter), &(blacklist->ea[blacklist->count]));
 				blacklist->count++;
 				break;
 		default:
@@ -3051,8 +3057,8 @@ wl_cfgvendor_set_bssid_blacklist(struct wiphy *wiphy,
 		goto exit;
 	}
 
-	err = dhd_dev_set_blacklist_bssid(bcmcfg_to_prmry_ndev(cfg),
-	          blacklist, mem_needed, flush);
+	err = wl_android_set_blacklist_bssid(wdev_to_ndev(wdev), blacklist,
+		mem_needed, flush);
 exit:
 	MFREE(cfg->osh, blacklist, mem_needed);
 	return err;
@@ -8847,7 +8853,7 @@ wl_cfgvendor_dbg_file_dump(struct wiphy *wiphy,
 				break;
 #ifdef DHD_SDTC_ETB_DUMP
 			case DUMP_BUF_ATTR_SDTC_ETB_DUMP:
-				ret = dhd_sdtc_etb_hal_file_dump(bcmcfg_to_prmry_ndev(cfg),
+				ret = dhd_sdtc_etb_hal_file_dump(dhd_pub,
 					buf->data_buf[0], (uint32)buf->len);
 				break;
 #endif /* DHD_SDTC_ETB_DUMP */
@@ -12408,6 +12414,19 @@ exit:
 #endif /* WL_NAN_INSTANT_MODE */
 
 #ifdef WL_USABLE_CHAN
+static bool
+wl_cfgvendor_is_same_band_ap_active(chanspec_t ap_chanspec, chanspec_t chspec)
+{
+	u16 ap_band;
+	/* Single AP case. Bring up the AP in the other band */
+	ap_band = CHSPEC_TO_WLC_BAND(ap_chanspec);
+	if (ap_band == CHSPEC_TO_WLC_BAND(chspec)) {
+		WL_INFORM(("AP operational on same band\n"));
+		return true;
+	}
+	return false;
+}
+
 int wl_cfgvendor_check_exist_freq_in_list(usable_channel_t *channels, int cur_idx, u32 freq)
 {
 	int i;
@@ -12421,7 +12440,7 @@ int wl_cfgvendor_check_exist_freq_in_list(usable_channel_t *channels, int cur_id
 
 void wl_cfgvendor_usable_channels_filter(struct bcm_cfg80211 *cfg, uint32 cur_chspec,
 		uint32 *mask, usable_channel_info_t *u_info, uint32 *conn,
-		wl_chan_info_t *chan_array)
+		wl_chan_info_t *chan_array, chanspec_t ap_chanspec)
 {
 #ifdef WL_CELLULAR_CHAN_AVOID
 	wifi_interface_mode mode;
@@ -12540,15 +12559,31 @@ void wl_cfgvendor_usable_channels_filter(struct bcm_cfg80211 *cfg, uint32 cur_ch
 				}
 
 			}
+		} else if (conn[WL_IF_TYPE_AP] == 1U) {
+			filter |= ((1U << WIFI_INTERFACE_P2P_GO) |
+					(1U << WIFI_INTERFACE_P2P_CLIENT) |
+					(1U << WIFI_INTERFACE_NAN));
+			if (wl_cfgvendor_is_same_band_ap_active(ap_chanspec, cur_chspec)) {
+				filter |=  (1U << WIFI_INTERFACE_SOFTAP);
+			}
+		} else if ((conn[WL_IF_TYPE_P2P_GC] == 1u) ||
+			(conn[WL_IF_TYPE_P2P_GO] == 1u)) {
+			filter |= ((1U << WIFI_INTERFACE_P2P_GO) |
+					(1U << WIFI_INTERFACE_P2P_CLIENT) |
+					(1U << WIFI_INTERFACE_NAN) |
+					(1U << WIFI_INTERFACE_SOFTAP));
 		}
 
 		/* Filter out STA under condition */
-		/* If Dual STA is enabled cannot add another STA iface on any channel
+		/* If Dual STA is enabled, cannot add another STA iface on any channel
 		 * and TDLS are not supported.
 		 */
 		if (conn[WL_IF_TYPE_STA] == 2U) {
 			filter |= ((1U << WIFI_INTERFACE_TDLS) |
-					(1U << WIFI_INTERFACE_STA));
+					(1U << WIFI_INTERFACE_STA) |
+					(1u << WIFI_INTERFACE_SOFTAP) |
+					(1U << WIFI_INTERFACE_P2P_GO) |
+					(1U << WIFI_INTERFACE_P2P_CLIENT));
 			WL_DBG(("DualSTA filter:%u chspec:%x cur_band:%d\n",
 					filter, cur_chspec, cur_band));
 		} else if (conn[WL_IF_TYPE_STA] == 1U && sta_chspec) {
@@ -12572,6 +12607,18 @@ void wl_cfgvendor_usable_channels_filter(struct bcm_cfg80211 *cfg, uint32 cur_ch
 #endif /* WL_CELLULAR_CHAN_AVOID */
 }
 
+#ifdef WL_NAN_INSTANT_MODE
+static bool wl_cfgvendor_is_nan_instant_mask_set(usable_channel_info_t *u_info)
+{
+	/* handle nan instant mode filter mask case separately */
+	if ((u_info->iface_mode_mask & (1 << WIFI_INTERFACE_NAN)) &&
+		(u_info->filter_mask & WIFI_USABLE_CHANNEL_FILTER_NAN_INSTANT_MODE)) {
+		return true;
+	}
+	return false;
+}
+#endif /* WL_NAN_INSTANT_MODE */
+
 static int wl_cfgvendor_get_usable_channels_handler(struct bcm_cfg80211 *cfg,
 	usable_channel_info_t *u_info)
 {
@@ -12591,7 +12638,7 @@ static int wl_cfgvendor_get_usable_channels_handler(struct bcm_cfg80211 *cfg,
 #endif /* WL_SOFTAP_6G */
 	uint32 conn[WL_IF_TYPE_MAX] = {0};
 	struct net_device *p2p_ndev = NULL;
-	chanspec_t sta_chanspec = 0;
+	chanspec_t sta_chanspec = INVCHANSPEC, ap_chanspec = INVCHANSPEC;
 	uint32 sta_assoc_freq = 0;
 	bool is_unii4 = false;
 #ifdef WL_NAN_INSTANT_MODE
@@ -12602,6 +12649,7 @@ static int wl_cfgvendor_get_usable_channels_handler(struct bcm_cfg80211 *cfg,
 	wl_chan_info_t chan_array[WLC_BAND_6G + 1];
 	u32 chspec_band = 0;
 	struct wireless_dev *wdev;
+	wl_ap_oper_data_t ap_oper_data = {0};
 
 	bzero(u_info->channels, sizeof(*u_info->channels) * u_info->max_size);
 	/* Get chan_info_list or chanspec from FW */
@@ -12623,6 +12671,16 @@ static int wl_cfgvendor_get_usable_channels_handler(struct bcm_cfg80211 *cfg,
 		goto exit;
 	}
 
+	/* Get AP chanspecs if operational */
+	err = wl_get_ap_chanspecs(cfg, &ap_oper_data);
+	if (err != BCME_OK) {
+		WL_ERR(("Failed to get ap chanspec, err: %d\n", err));
+		goto exit;
+	}
+
+	if (ap_oper_data.count == 1) {
+		ap_chanspec = ap_oper_data.iface[0].chspec;
+	}
 
 #ifdef WL_NAN_INSTANT_MODE
 	if ((u_info->iface_mode_mask & (1 << WIFI_INTERFACE_NAN)) &&
@@ -12659,19 +12717,23 @@ static int wl_cfgvendor_get_usable_channels_handler(struct bcm_cfg80211 *cfg,
 						if (netinfo->mlinfo.links[i].link_idx == 0) {
 							chan_array[sta_band].is_primary = TRUE;
 						}
-						WL_INFORM_MEM(("sta_chspec:%x band:%d primry:%d\n",
+						WL_INFORM_MEM(("sta_chspec:%x band:%d primary:%d\n",
 								sta_chanspec, sta_band,
 								chan_array[sta_band].is_primary));
 					}
 				} else {
 					sta_chanspec = wl_cfg80211_get_sta_chanspec(cfg);
+					chspec_band = CHSPEC_BAND(sta_chanspec);
+					channel = wf_chspec_primary20_chan(sta_chanspec);
+					sta_assoc_freq =
+						wl_channel_to_frequency(channel, chspec_band);
+
 					sta_band = CHSPEC_TO_WLC_BAND(CHSPEC_BAND(sta_chanspec));
-					channel = wf_chspec_center_channel(sta_chanspec);
 					chan_array[sta_band].chspec = sta_chanspec;
 					chan_array[sta_band].is_primary = sta_chanspec;
-					sta_assoc_freq = wl_channel_to_frequency(channel, band);
-					WL_INFORM_MEM(("sta_chanspec:%x band:%d\n",
-						sta_chanspec, band));
+					WL_INFORM_MEM(("sta_assoc_freq:%d, sta_chanspec:%x "
+						" sta chanspec band:%x\n",
+						sta_assoc_freq, sta_chanspec, chspec_band));
 				}
 			}
 		}
@@ -12749,12 +12811,21 @@ static int wl_cfgvendor_get_usable_channels_handler(struct bcm_cfg80211 *cfg,
 		}
 
 		if (!restrict_chan && !ch_160mhz_5g) {
-			if (!is_unii4)
-			{
+			if (!is_unii4) {
 				if (CHSPEC_IS6G(chspec)) {
-#ifdef WL_NAN_6G
-					mask |= (1 << WIFI_INTERFACE_NAN);
-#endif /* WL_NAN_6G */
+#if defined(WL_NAN) && defined(WL_NAN_6G)
+					if (cfg->nancfg->is_6g_nan_supported) {
+#ifdef WL_NAN_INSTANT_MODE
+						if (wl_cfgvendor_is_nan_instant_mask_set(u_info)) {
+							WL_DBG(("No support of nan "
+								"instant 6g channel\n"));
+						} else
+#endif /* WL_NAN_INSTANT_MODE */
+						{
+							mask |= (1 << WIFI_INTERFACE_NAN);
+						}
+					}
+#endif /* WL_NAN && WL_NAN_6G */
 #ifdef WL_SOFTAP_6G
 					/* consider only VLP and PSC channel in 6g for softap */
 					if (vlp_psc_include) {
@@ -12763,16 +12834,12 @@ static int wl_cfgvendor_get_usable_channels_handler(struct bcm_cfg80211 *cfg,
 #endif /* WL_SOFTAP_6G */
 				} else {
 					/* handle 2G and 5G channels */
-					mask |= (1 << WIFI_INTERFACE_SOFTAP);
-
 					if (!(chaninfo & WL_CHAN_P2P_PROHIBITED)) {
 						mask |= (1 << WIFI_INTERFACE_P2P_GO);
+						mask |= (1 << WIFI_INTERFACE_SOFTAP);
 					}
 #ifdef WL_NAN_INSTANT_MODE
-					/* handle nan instant mode filter mask case separately */
-					if ((u_info->iface_mode_mask & (1 << WIFI_INTERFACE_NAN)) &&
-						(u_info->filter_mask &
-						WIFI_USABLE_CHANNEL_FILTER_NAN_INSTANT_MODE)) {
+					if (wl_cfgvendor_is_nan_instant_mask_set(u_info)) {
 						if (chspec == nan_inst_mode_chspec) {
 							mask |= (1 << WIFI_INTERFACE_NAN);
 						}
@@ -12856,7 +12923,7 @@ static int wl_cfgvendor_get_usable_channels_handler(struct bcm_cfg80211 *cfg,
 		for (i = 0; i < u_info->size; i++) {
 			cur_ch = &u_info->channels[i];
 			wl_cfgvendor_usable_channels_filter(cfg, cur_ch->chspec,
-				&cur_ch->iface_mode_mask, u_info, conn, chan_array);
+				&cur_ch->iface_mode_mask, u_info, conn, chan_array, ap_chanspec);
 			WL_INFORM_MEM(("chanspec:%x freq:%u width:%u iface_mode_mask:%u\n",
 				cur_ch->chspec, cur_ch->freq,
 				cur_ch->width, cur_ch->iface_mode_mask));

@@ -437,6 +437,7 @@ typedef struct dhd_bus {
 	uint32 pcie_mailbox_int;
 	bool	ltrsleep_on_unload;
 	uint	wait_for_d3_ack;
+	uint	wait_for_d0_ack;
 	uint16	max_tx_flowrings;
 	uint16	max_submission_rings;
 	uint16	max_completion_rings;
@@ -690,6 +691,18 @@ typedef struct dhd_bus {
 	bool ltr_active_set_during_init;
 	uint32 etb_config_addr;
 } dhd_bus_t;
+
+#ifdef DHD_PCIE_WRAPPER_DUMP
+typedef struct pcie_wrapper {
+	char *core;
+	uint32 base;
+} pcie_wrapper_t;
+
+typedef struct pcie_wrapper_offset {
+	uint32 offset;
+	uint32 len;
+} pcie_wrapper_offset_t;
+#endif /* DHD_PCIE_WRAPPER_DUMP */
 
 #define LPBK_DMA_XFER_DTPTRN_DEFAULT	0
 #define LPBK_DMA_XFER_DTPTRN_0x00	1
@@ -1104,10 +1117,51 @@ extern void dhdpcie_set_pmu_min_res_mask(void *bus, uint min_res_mask);
 extern int dhdpcie_skip_xorcsum_request(void *dhd_bus_p);
 
 void dhd_sbreg_op(dhd_pub_t *dhd, uint addr, uint *val, bool read);
+void dhd_sbreg_op_silent(dhd_pub_t *dhd, uint addr, uint *val, bool read);
 uint serialized_backplane_access(dhd_bus_t *bus, uint addr, uint size, uint *val, bool read);
 dhd_pcie_link_state_type_t dhdpcie_get_link_state(dhd_bus_t *bus);
 void dhd_bus_pcie_pwr_req_wl_domain(struct dhd_bus *bus, uint offset, bool enable);
 #ifdef DHD_FW_COREDUMP
 int dhdpcie_get_mem_dump(dhd_bus_t *bus);
 #endif /* DHD_FW_COREDUMP */
+void dhd_dump_pcie_slave_wrapper_regs(dhd_bus_t *bus);
+void dhd_init_dpc_histos(dhd_pub_t *dhd);
+void dhd_deinit_dpc_histos(dhd_pub_t *dhd);
+void dhd_dump_dpc_histos(dhd_pub_t *dhd, struct bcmstrbuf *strbuf);
+void dhd_clear_dpc_histos(dhd_pub_t *dhd);
+void dhdpcie_schedule_log_dump(dhd_bus_t *bus);
+#if defined(FW_SIGNATURE)
+int dhd_bus_dump_fws(dhd_bus_t *bus, struct bcmstrbuf *strbuf);
+#endif /* FW_SIGNATURE */
+void dhd_bus_dump_txcpl_info(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf);
+void dhd_bus_dump_mdring_info(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf);
+void dhd_bus_dump_rxlat_info(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf);
+void dhd_bus_dump_rxlat_histo(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf);
+#ifdef DNGL_AXI_ERROR_LOGGING
+void dhdpcie_dump_axi_error(uint8 *axi_err);
+#endif /* DNGL_AXI_ERROR_LOGGING */
+#ifdef DHD_MMIO_TRACE
+void dhd_bus_mmio_trace(dhd_bus_t *bus, uint32 addr, uint32 value, bool set);
+#endif /* DHD_MMIO_TRACE */
+#ifdef PCIE_INB_DW
+void dhd_bus_ds_trace(dhd_bus_t *bus, uint32 dsval,
+	bool d2h, enum dhd_bus_ds_state inbstate, const char *context);
+#else
+void dhd_bus_ds_trace(dhd_bus_t *bus, uint32 dsval, bool d2h);
+#endif /* PCIE_INB_DW */
+#ifdef DHD_PCIE_WRAPPER_DUMP
+void dhd_pcie_get_wrapper_regs(dhd_pub_t *dhd);
+#endif /* DHD_PCIE_WRAPPER_DUMP */
+int dhd_pcie_dump_wrapper_regs(dhd_pub_t *dhd);
+void dhdpcie_hw_war_regdump(dhd_bus_t *bus);
+#if defined(EWP_DACS) || defined(DHD_SDTC_ETB_DUMP)
+int dhd_bus_get_etb_dump_cmn(dhd_bus_t *bus, uint8 *buf, uint bufsize,
+	uint32 etb_config_info_addr);
+#endif /* EWP_DACS || DHD_SDTC_ETB_DUMP */
+#ifdef EWP_DACS
+int dhdpcie_ewphw_get_initdumps(dhd_bus_t *bus);
+#endif /* EWP_DACS */
+void dhd_bus_pcie_pwr_req(struct dhd_bus *bus);
+void dhd_bus_pcie_pwr_req_clear(struct dhd_bus *bus);
+
 #endif /* dhd_pcie_h */
