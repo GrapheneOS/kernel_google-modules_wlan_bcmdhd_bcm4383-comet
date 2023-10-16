@@ -763,7 +763,7 @@ do {									\
 #define WL_SCAN_TIMER_INTERVAL_MS	10000 /* Scan timeout */
 
 /* For devices in non-rsdb mode , need to add 2G scan time also */
-#define WL_SCAN_TIMER_INTERVAL_MS_NON_RSDB	2000u
+#define WL_SCAN_TIMER_INTERVAL_MS_NON_RSDB	7000u
 #define WL_RSDB_MODE_MIMO	0
 #define WL_RSDB_MODE_RSDB	1u
 
@@ -2012,6 +2012,7 @@ typedef struct wlcfg_assoc_info {
 	bool reassoc;
 	bool bssid_hint;
 	u8 bssid[ETH_ALEN];
+	u8 mld[ETH_ALEN];
 	u16 ssid_len;
 	u8 ssid[DOT11_MAX_SSID_LEN];
 	s32 bssidx;
@@ -3915,8 +3916,7 @@ extern s32 wl_cfgvendor_notify_twt_event(struct bcm_cfg80211 *cfg,
 extern int wl_get_all_sideband_chanspecs(uint center_channel, chanspec_band_t band,
 	chanspec_bw_t bw, chanspec_t *chspecs, int *cnt);
 
-extern int wl_cfg80211_reassoc(struct net_device *dev, struct ether_addr *bssid,
-	chanspec_t chanspec);
+extern int wl_cfg80211_reassoc(struct net_device *dev, wlcfg_assoc_info_t *info);
 extern void wl_cfg80211_set_suspend_bcn_li_dtim(struct bcm_cfg80211 *cfg,
 		struct net_device *dev, bool suspend);
 extern void wl_cfg80211_soft_suspend(struct net_device *dev, bool supsend);
@@ -3960,9 +3960,6 @@ typedef struct wl_ext_reassoc_params_cvt_v1 {
 	wl_reassoc_params_cvt_v1_t params;
 } wl_ext_reassoc_params_cvt_v1_t;
 
-#define WL_REASSOC_VERSION_V0	0u
-#define WL_REASSOC_VERSION_V1	WL_JOIN_VERSION_MAJOR_1
-#define WL_REASSOC_VERSION_V2	WL_EXT_REASSOC_VER_1
 #ifdef WL_CP_COEX
 struct wl_cp_coex {
 	int ch_cpcoex;

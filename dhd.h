@@ -1221,11 +1221,13 @@ typedef struct tx_cpl_info {
 } tx_cpl_info_t;
 
 #define DHD_PTM_CLK_ID		0xEu		/* PTM clock ID; IDs 0-3 are used in tsync module */
+#define DHD_INV_CLK_ID		0xFu		/* PTM clock ID; IDs 0-3 are used in tsync module */
 #define DHD_PTM_CLK_ID_MASK	0xF0000000u	/* Bitmask for clkid */
 #define DHD_PTM_CLK_ID_SHIFT	28u		/* Bitshift for clkid */
 
 #define DHD_PTM_GET_CLKID(ts) (((ts) & DHD_PTM_CLK_ID_MASK) >> DHD_PTM_CLK_ID_SHIFT)
 #define DHD_PTM_CLKID(ts) (DHD_PTM_GET_CLKID(ts) == DHD_PTM_CLK_ID)
+#define DHD_INV_CLKID(ts) (DHD_PTM_GET_CLKID(ts) == DHD_INV_CLK_ID)
 
 #ifdef DHD_USE_STATIC_CTRLBUF
 #define PKTFREE_CTRLBUF(osh, p, flag) PKTFREE_STATIC(osh, p, flag);
@@ -1492,7 +1494,7 @@ typedef struct dhd_pub {
 	bool	invalid_shinfo_nrfrags;	/* flag to indicate invlaid shinfo nrfrags */
 	bool	is_sched_error;		/* flag to indicate timeout due to scheduling issue */
 #ifdef PCIE_FULL_DONGLE
-	bool	d3d0ack_timeout_occured;	/* flag to indicate d3ack resumed on timeout */
+	bool	d3ack_timeout_occured;	/* flag to indicate d3ack resumed on timeout */
 	bool	livelock_occured;	/* flag to indicate livelock occured */
 	bool	pktid_audit_failed;	/* flag to indicate pktid audit failure */
 	bool	pktid_invalid_occured;	/* flag to indicate invalid pktid */
@@ -1519,7 +1521,7 @@ typedef struct dhd_pub {
 	int   rxcnt_timeout;		/* counter rxcnt timeout to send HANG */
 	int   txcnt_timeout;		/* counter txcnt timeout to send HANG */
 #ifdef BCMPCIE
-	int   d3d0ackcnt_timeout;		/* counter d3ack timeout to send HANG */
+	int   d3ackcnt_timeout;		/* counter d3ack timeout to send HANG */
 #endif /* BCMPCIE */
 	bool hang_report;		/* enable hang report by default */
 	uint16 hang_reason;		/* reason codes for HANG event */
@@ -3201,8 +3203,6 @@ int dhd_os_busbusy_wait_bitmask(dhd_pub_t *pub, uint *var,
 #ifdef PCIE_INB_DW
 extern int dhd_os_ds_exit_wait(dhd_pub_t * pub, uint * condition);
 extern int dhd_os_ds_exit_wake(dhd_pub_t * pub);
-extern int dhd_os_d0_exit_wait(dhd_pub_t * pub, uint * condition);
-extern int dhd_os_d0_exit_wake(dhd_pub_t * pub);
 #endif /* PCIE_INB_DW */
 int dhd_os_tput_test_wait(dhd_pub_t *pub, uint *condition, uint timeout_ms);
 int dhd_os_tput_test_wake(dhd_pub_t * pub);
@@ -3220,10 +3220,6 @@ static INLINE int dhd_os_d3ack_wake(dhd_pub_t * pub)
 static INLINE int dhd_os_ds_exit_wait(dhd_pub_t * pub, uint * condition)
 { DHD_ERROR(("%s is Not supported for this platform", __FUNCTION__)); return 0; }
 static INLINE int dhd_os_ds_exit_wake(dhd_pub_t * pub)
-{ DHD_ERROR(("%s is Not supported for this platform", __FUNCTION__)); return 0; }
-static INLINE int dhd_os_d0_exit_wait(dhd_pub_t * pub, uint * condition)
-{ DHD_ERROR(("%s is Not supported for this platform", __FUNCTION__)); return 0; }
-static INLINE int dhd_os_d0_exit_wake(dhd_pub_t * pub)
 { DHD_ERROR(("%s is Not supported for this platform", __FUNCTION__)); return 0; }
 #endif /* PCIE_INB_DW */
 static INLINE int dhd_os_busbusy_wait_negation(dhd_pub_t * pub, uint * condition)
@@ -4245,14 +4241,6 @@ extern int dhd_sdtc_etb_hal_file_dump(void *dhd_pub, const void *user_buf, uint3
 #endif /* DHD_SDTC_ETB_DUMP */
 
 #ifdef DHD_COREDUMP
-/* socram size + TLVs */
-#define WLAN_DHD_COREDUMP_SIZE (5u * 1024u * 1024u)
-#ifdef DHD_SDTC_ETB_DUMP
-#define DHD_MEMDUMP_BUFFER_SIZE \
-	(WLAN_DHD_COREDUMP_SIZE + DHD_SSSR_MEMPOOL_SIZE + DHD_SDTC_ETB_MEMPOOL_SIZE)
-#else
-#define DHD_MEMDUMP_BUFFER_SIZE (WLAN_DHD_COREDUMP_SIZE + DHD_SSSR_MEMPOOL_SIZE)
-#endif /* DHD_SDTC_ETB_DUMP */
 extern int dhd_coredump_mempool_init(dhd_pub_t *dhd);
 extern void dhd_coredump_mempool_deinit(dhd_pub_t *dhd);
 #define DHD_COREDUMP_MEMPOOL_INIT(dhdp)		dhd_coredump_mempool_init(dhdp)

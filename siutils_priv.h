@@ -341,10 +341,6 @@ extern uint32 ai_clear_backplane_to(si_t *sih);
 void ai_force_clocks(const si_t *sih, uint clock_state);
 extern uint ai_num_slaveports(const si_t *sih, uint coreidx);
 
-#ifdef BOOKER_NIC400_INF
-extern void ai_core_reset_ext(const si_t *sih, uint32 bits, uint32 resetbits);
-#endif /* BOOKER_NIC400_INF */
-
 #if defined(AXI_TIMEOUTS)
 extern uint32 ai_clear_backplane_to_per_core(si_t *sih, uint coreid, uint coreunit,
 	volatile void *wrap);
