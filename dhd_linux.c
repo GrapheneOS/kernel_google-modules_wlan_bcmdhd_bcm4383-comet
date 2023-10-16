@@ -2030,16 +2030,24 @@ dhd_is_sta_htput(void *pub, int ifidx, void *ea)
 	dhd_if_t *ifp;
 	unsigned long flags;
 	bool htput = FALSE;
+	dhd_pub_t *dhd = (dhd_pub_t *)pub;
+
+	/* For 4383 which is 80MHz chip, htput needs to be enabled to get tput */
+	if (dhd->htput_force_sta) {
+		DHD_PRINT(("%s: htput_force_sta, set htput\n", __FUNCTION__));
+		htput = TRUE;
+		return htput;
+	}
 
 	/* For non-AP role, chanspec will not be updated and always use htput */
-	if (!DHD_IF_ROLE_AP((dhd_pub_t *)pub, ifidx)) {
-		DHD_ERROR(("%s: non-AP role, set htput\n", __FUNCTION__));
+	if (!DHD_IF_ROLE_AP(dhd, ifidx)) {
+		DHD_PRINT(("%s: non-AP role, set htput\n", __FUNCTION__));
 		htput = TRUE;
 		return htput;
 	}
 
 	ASSERT(ea != NULL);
-	ifp = dhd_get_ifp((dhd_pub_t *)pub, ifidx);
+	ifp = dhd_get_ifp(dhd, ifidx);
 	if (ifp == NULL) {
 		DHD_ERROR(("%s: NULL ifp for ifidx:%d\n", __FUNCTION__, ifidx));
 		return htput;
@@ -2058,7 +2066,7 @@ dhd_is_sta_htput(void *pub, int ifidx, void *ea)
 		 * This will be removed after FW fix.
 		 */
 		else if ((sta->peer_info != NULL) && (sta->peer_info->num_links > 0)) {
-			DHD_ERROR(("Associated to MLO capable STA, enabling htput\n"));
+			DHD_PRINT(("Associated to MLO capable STA, enabling htput\n"));
 			htput = TRUE;
 		}
 #endif /* WL_MLO */
@@ -7198,16 +7206,16 @@ dhd_open(struct net_device *net)
 #endif /* CONFIG_IPV6 && IPV6_NDO_SUPPORT */
 		}
 #if defined(DHDTCPACK_SUPPRESS) && defined(BCMSDIO)
-	dhd_tcpack_suppress_set(&dhd->pub, TCPACK_SUP_DELAYTX);
+		dhd_tcpack_suppress_set(&dhd->pub, TCPACK_SUP_DELAYTX);
 #endif /* DHDTCPACK_SUPPRESS */
 #if defined(DHD_CONTROL_PCIE_ASPM_WIFI_TURNON)
-	dhd_bus_aspm_enable_rc_ep(dhd->pub.bus, TRUE);
+		dhd_bus_aspm_enable_rc_ep(dhd->pub.bus, TRUE);
 #endif /* DHD_CONTROL_PCIE_ASPM_WIFI_TURNON */
 #if defined(DHD_CONTROL_PCIE_CPUCORE_WIFI_TURNON)
-	dhd_irq_set_affinity(&dhd->pub, cpumask_of(0));
+		dhd_irq_set_affinity(&dhd->pub, cpumask_of(0));
 #endif /* DHD_CONTROL_PCIE_CPUCORE_WIFI_TURNON */
 #if defined(BCMPCIE) && defined(DHDTCPACK_SUPPRESS)
-		dhd_tcpack_suppress_set(&dhd->pub, TCPACK_SUP_OFF);
+		dhd_tcpack_suppress_set(&dhd->pub, TCPACK_SUP_HOLD);
 #endif /* BCMPCIE && DHDTCPACK_SUPPRESS */
 #if defined(NUM_SCB_MAX_PROBE)
 		dhd_set_scb_probe(&dhd->pub);
