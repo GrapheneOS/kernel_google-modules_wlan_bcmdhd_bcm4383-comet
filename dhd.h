@@ -2055,6 +2055,7 @@ typedef struct dhd_pub {
 	void *plat_info;
 	uint32 plat_info_size;
 	bool htput_support;
+	bool htput_force_sta;
 	uint16 htput_sta_flowrings;	/* Number for htput flowring for STA */
 	uint16 htput_client_flowrings;	/* Number for htput flowring for clients */
 	uint16 htput_total_flowrings;	/* Total number for htput flowrings (Sta and client) */
