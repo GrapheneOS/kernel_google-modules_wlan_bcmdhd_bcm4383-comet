@@ -151,6 +151,7 @@
 #define CMD_DATARATE      "DATARATE"
 #define CMD_ASSOC_CLIENTS "ASSOCLIST"
 #define CMD_SET_CSA       "SETCSA"
+#define CMD_TRIG_REASSOC  "REASSOCIATE"
 #ifdef WL_SUPPORT_AUTO_CHANNEL
 #define CMD_SET_HAPD_AUTO_CHANNEL	"HAPD_AUTO_CHANNEL"
 #endif /* WL_SUPPORT_AUTO_CHANNEL */
@@ -489,8 +490,8 @@ typedef union {
 	wl_roam_prof_band_v2_t v2;
 	wl_roam_prof_band_v3_t v3;
 	wl_roam_prof_band_v4_t v4;
+	wl_roam_prof_band_v6_t v6;
 } wl_roamprof_band_t;
-
 
 #ifdef WLWFDS
 #define CMD_ADD_WFDS_HASH	"ADD_WFDS_HASH"
@@ -1955,6 +1956,16 @@ wl_android_get_roam_trigger(struct net_device *dev, char *command, int total_len
 				}
 			}
 			break;
+			case WL_ROAM_PROF_VER_5:
+			{
+				for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
+					if (rp.v6.roam_prof[i].channel_usage == 0) {
+						roam_trigger[0] = rp.v6.roam_prof[i].roam_trigger;
+						break;
+					}
+				}
+			}
+			break;
 
 			default:
 				WL_ERR(("bad version = %d \n", roam_prof_ver));
@@ -2987,7 +2998,9 @@ wl_android_reassoc_chan(struct net_device *dev, char *command, int total_len)
 	struct ether_addr bssid;
 	chanspec_t chanspec;
 	char pcmd[WL_PRIV_CMD_LEN + 1];
+	wlcfg_assoc_info_t info;
 
+	bzero(&info, sizeof(wlcfg_assoc_info_t));
 	sscanf(command, "%"BCM_STR(WL_PRIV_CMD_LEN)"s *", pcmd);
 	if (total_len < (strlen(pcmd) + 1 + sizeof(android_wifi_reassoc_params_t))) {
 		WL_ERR(("Invalid parameters %s\n", command));
@@ -3009,7 +3022,11 @@ wl_android_reassoc_chan(struct net_device *dev, char *command, int total_len)
 
 	WL_INFORM_MEM(("Reassoc " MACDBG " Channel %d(0x%04x)\n",
 		MAC2STRDBG(bssid.octet), params->channel, chanspec));
-	error = wl_cfg80211_reassoc(dev, &bssid, chanspec);
+
+	eacopy(bssid.octet, info.bssid);
+	info.chanspecs[0] = chanspec;
+	info.chan_cnt = 1u;
+	error = wl_cfg80211_reassoc(dev, &info);
 	if (error) {
 		WL_ERR(("failed reassoc with channel, error=%d\n", error));
 	}
@@ -3025,6 +3042,9 @@ wl_android_reassoc_freq(struct net_device *dev, char *command, int total_len)
 	struct ether_addr bssid;
 	chanspec_t chanspec, frequency;
 	char pcmd[WL_PRIV_CMD_LEN + 1];
+	wlcfg_assoc_info_t info;
+
+	bzero(&info, sizeof(wlcfg_assoc_info_t));
 
 	sscanf(command, "%"BCM_STR(WL_PRIV_CMD_LEN)"s *", pcmd);
 	params = (command + strlen(pcmd) + 1);
@@ -3056,7 +3076,10 @@ wl_android_reassoc_freq(struct net_device *dev, char *command, int total_len)
 
 	WL_INFORM_MEM(("Reassoc " MACDBG " Frequency %d(0x%04x)\n",
 		MAC2STRDBG(bssid.octet), frequency, chanspec));
-	error = wl_cfg80211_reassoc(dev, &bssid, chanspec);
+	eacopy(bssid.octet, info.bssid);
+	info.chanspecs[0] = chanspec;
+	info.chan_cnt = 1u;
+	error = wl_cfg80211_reassoc(dev, &info);
 	if (error) {
 		WL_ERR(("failed reassoc with frequency, error=%d\n", error));
 	}
@@ -5181,6 +5204,117 @@ wl_android_set_mac_address_filter(struct net_device *dev, char* str)
 exit:
 	MFREE(cfg->osh, list, sizeof(int) + sizeof(struct ether_addr) * macnum);
 
+	return ret;
+}
+
+int
+wl_parse_chanspec_list(char *list_str, chanspec_t *chanspec_list, int max_chanspec_num)
+{
+	int num = 0;
+	chanspec_t chanspec;
+	char *tok;
+
+	if (list_str == NULL) {
+		WL_ERR(("channel list is empty\n"));
+		return BCME_ERROR;
+	}
+
+	while ((tok = bcmstrtok(&list_str, ", ", NULL)) > 0) {
+
+		if (*tok == '-') {
+			/* If parsing reached next arg, exit */
+			WL_DBG(("hit next arg. exit\n"));
+			goto exit;
+		}
+
+		chanspec = wf_chspec_aton(tok);
+		if (chanspec == 0) {
+			if (!strcmp(tok, "2g0")) {
+				chanspec = WL_CHANSPEC_BW_20 | WL_CHANSPEC_BAND_2G;
+			} else if (!strcmp(tok, "5g0")) {
+				chanspec = WL_CHANSPEC_BW_20 | WL_CHANSPEC_BAND_5G;
+			} else if (!strcmp(tok, "6g0")) {
+				chanspec = WL_CHANSPEC_BW_20 | WL_CHANSPEC_BAND_6G;
+			} else {
+				WL_ERR(("could not parse chanspec starting at "
+					"\"%s\" in list:\n%s\n", tok, list_str));
+				return BCME_ERROR;
+			}
+		}
+
+		if (num == max_chanspec_num) {
+			WL_ERR(("too many chanspecs (more than %d) in chanspec list:\n%s\n",
+				max_chanspec_num, list_str));
+			return BCME_ERROR;
+		}
+		WL_DBG(("chanspec:0x%x str:%s\n", chanspec, tok));
+		chanspec_list[num++] = chanspec;
+	}
+exit:
+	return num;
+}
+
+static int wl_android_trigger_reassoc(struct net_device *ndev, char *command, int total_len)
+{
+	s32 ret = BCME_OK;
+	struct bcm_cfg80211 *cfg = wl_get_cfg(ndev);
+	struct ether_addr bssid;
+	struct ether_addr mld;
+	char *pcmd = command;
+	char *pos;
+	s32 chan_cnt = 0;
+	wlcfg_assoc_info_t info;
+
+	bzero(&info, sizeof(wlcfg_assoc_info_t));
+	bzero(&mld, sizeof(struct ether_addr));
+	bzero(&bssid, sizeof(struct ether_addr));
+	pcmd += strlen(CMD_TRIG_REASSOC);
+
+	pos = pcmd;
+	pcmd = strnstr(pos, "-b ", strlen(pos));
+	if (pcmd) {
+		/* bssid/link_addr */
+		pcmd += strlen("-b ");
+		if (!pcmd || !bcm_ether_atoe(pcmd, &bssid)) {
+			WL_ERR(("Invalid bssid string %s\n", pcmd));
+			ret = -EINVAL;
+			goto exit;
+		}
+		eacopy(bssid.octet, info.bssid);
+	}
+
+	pcmd = strnstr(pos, "-m ", strlen(pos));
+	if (pcmd) {
+		/* mld_addr */
+		pcmd += strlen("-m ");
+		if (!pcmd || !bcm_ether_atoe(pcmd, &mld)) {
+			WL_ERR(("Invalid mld string %s\n", pcmd));
+			ret = -EINVAL;
+			goto exit;
+		}
+		eacopy(mld.octet, info.mld);
+	}
+
+
+	pcmd = strnstr(pos, "-c", strlen(pos));
+	if (pcmd) {
+		pcmd += strlen("-c ");
+		chan_cnt = wl_parse_chanspec_list(pcmd, info.chanspecs, MAX_ROAM_CHANNEL);
+		if ((chan_cnt < BCME_OK) || chan_cnt >= MAX_ROAM_CHANNEL) {
+			WL_ERR(("channel parsing failed pcmd:%s\n", pcmd));
+			return BCME_ERROR;
+		}
+		info.chan_cnt = chan_cnt;
+	}
+	WL_INFORM_MEM(("Reassoc bssid: " MACDBG " mld: " MACDBG " chan_cnt:%d\n",
+		MAC2STRDBG(bssid.octet), MAC2STRDBG(mld.octet), chan_cnt));
+
+	ret = wl_cfg80211_reassoc(ndev, &info);
+	if (ret) {
+		WL_ERR(("failed reassoc error=%d iovar_ver:%d\n",
+			ret, cfg->join_iovar_ver));
+	}
+exit:
 	return ret;
 }
 
@@ -14397,6 +14531,9 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 		bytes_written = wl_nan_ranging_bw(net, bw_cmd, command);
 	}
 #endif /* SUPPORT_NAN_RANGING_TEST_BW */
+	else if (strnicmp(command, CMD_TRIG_REASSOC, strlen(CMD_TRIG_REASSOC)) == 0) {
+		bytes_written = wl_android_trigger_reassoc(net, command, priv_cmd.total_len);
+	}
 	else if (strnicmp(command, CMD_GET_FACTORY_MAC, strlen(CMD_GET_FACTORY_MAC)) == 0) {
 		bytes_written = wl_android_get_factory_mac_addr(net, command, priv_cmd.total_len);
 	}
@@ -15049,7 +15186,7 @@ wlc_wbtext_get_roam_prof(struct net_device *ndev, wl_roamprof_band_t *rp,
 	}
 	memcpy_s(rp, sizeof(*rp), ioctl_buf, sizeof(*rp));
 	/* roam_prof version get */
-	if (rp->v1.ver > WL_ROAM_PROF_VER_4) {
+	if (rp->v1.ver > WL_ROAM_PROF_VER_5) {
 		WL_ERR(("bad version (=%d) in return data\n", rp->v1.ver));
 		err = BCME_VERSION;
 		goto exit;
@@ -15083,6 +15220,12 @@ wlc_wbtext_get_roam_prof(struct net_device *ndev, wl_roamprof_band_t *rp,
 		{
 			*roam_prof_size = sizeof(wl_roam_prof_v4_t);
 			*roam_prof_ver = WL_ROAM_PROF_VER_4;
+		}
+		break;
+		case WL_ROAM_PROF_VER_5:
+		{
+			*roam_prof_size = sizeof(wl_roam_prof_v6_t);
+			*roam_prof_ver = WL_ROAM_PROF_VER_5;
 		}
 		break;
 
@@ -15160,6 +15303,7 @@ wl_cfg80211_wbtext_set_default(struct net_device *ndev)
 			case WL_ROAM_PROF_VER_2:
 			case WL_ROAM_PROF_VER_3:
 			case WL_ROAM_PROF_VER_4:
+			case WL_ROAM_PROF_VER_5:
 			{
 				memset_s(commandp, WLC_IOCTL_SMLEN, 0, WLC_IOCTL_SMLEN);
 				if (bandidx == BAND_5G_INDEX) {
@@ -15369,7 +15513,7 @@ wl_cfg80211_wbtext_config(struct net_device *ndev, char *data, char *command, in
 	}
 	memcpy_s(rp, sizeof(*rp), ioctl_buf, sizeof(*rp));
 	/* roam_prof version get */
-	if (rp->v1.ver > WL_ROAM_PROF_VER_4) {
+	if (rp->v1.ver > WL_ROAM_PROF_VER_5) {
 		WL_ERR(("bad version (=%d) in return data\n", rp->v1.ver));
 		err = -EINVAL;
 		goto exit;
@@ -15405,11 +15549,16 @@ wl_cfg80211_wbtext_config(struct net_device *ndev, char *data, char *command, in
 			roam_prof_ver = WL_ROAM_PROF_VER_4;
 		}
 		break;
+		case WL_ROAM_PROF_VER_5:
+		{
+			roam_prof_size = sizeof(wl_roam_prof_v6_t);
+			roam_prof_ver = WL_ROAM_PROF_VER_5;
+		}
+		break;
 		default:
 			WL_ERR(("bad version = %d \n", rp->v1.ver));
 			goto exit;
 	}
-	WL_DBG(("roam prof ver %u size %u\n", roam_prof_ver, roam_prof_size));
 	if ((rp->v1.len % roam_prof_size) != 0) {
 		WL_ERR(("bad length (=%d) in return data\n", rp->v1.len));
 		err = -EINVAL;
@@ -15434,6 +15583,8 @@ wl_cfg80211_wbtext_config(struct net_device *ndev, char *data, char *command, in
 			fs_per = rp->v4.roam_prof[i].fullscan_period;
 		} else if (roam_prof_ver == WL_ROAM_PROF_VER_4) {
 			fs_per = rp->v4.roam_prof[i].fullscan_period;
+		} else if (roam_prof_ver == WL_ROAM_PROF_VER_5) {
+			fs_per = rp->v6.roam_prof[i].fullscan_period;
 		}
 		if (fs_per == 0) {
 			break;
@@ -15475,7 +15626,24 @@ wl_cfg80211_wbtext_config(struct net_device *ndev, char *data, char *command, in
 					rp->v4.roam_prof[i].rssi_lower,
 					rp->v4.roam_prof[i].channel_usage,
 					rp->v4.roam_prof[i].cu_avg_calc_dur);
-
+			} else if (roam_prof_ver == WL_ROAM_PROF_VER_5) {
+				bytes_written += snprintf(command+bytes_written,
+					total_len - bytes_written,
+					"RSSI[%d,%d] CU(trigger:%d%%: duration:%ds)"
+					" ESTM(low_trigger: %d, roam_delta: %d),"
+					" boost_bitmap %d),"
+					" lp_roamscan_period: %d, max_fullscan_period: %d,"
+					" cca_meas_span:%d",
+					rp->v6.roam_prof[i].roam_trigger,
+					rp->v6.roam_prof[i].rssi_lower,
+					rp->v6.roam_prof[i].channel_usage,
+					rp->v6.roam_prof[i].cu_avg_calc_dur,
+					rp->v6.roam_prof[i].estm_low_trigger,
+					rp->v6.roam_prof[i].estm_roam_delta,
+					rp->v6.roam_prof[i].boost_bitmap,
+					rp->v6.roam_prof[i].lp_roamscan_period,
+					rp->v6.roam_prof[i].max_fullscan_period,
+					rp->v6.roam_prof[i].cca_meas_span);
 			}
 		}
 		bytes_written += scnprintf(command+bytes_written, total_len - bytes_written, "\n");
@@ -15541,6 +15709,20 @@ wl_cfg80211_wbtext_config(struct net_device *ndev, char *data, char *command, in
 					simple_strtol(data, &data, 10);
 				rp->v4.roam_prof[i].lp_roamscan_period = 0;
 				rp->v4.roam_prof[i].max_fullscan_period = 0;
+			}
+
+			if (roam_prof_ver == WL_ROAM_PROF_VER_5) {
+				rp->v6.roam_prof[i].roam_trigger = roam_trigger;
+				rp->v6.roam_prof[i].rssi_lower = rssi_lower;
+				data++;
+				rp->v6.roam_prof[i].channel_usage = simple_strtol(data, &data, 10);
+				data++;
+				rp->v6.roam_prof[i].cu_avg_calc_dur =
+					simple_strtol(data, &data, 10);
+				rp->v6.roam_prof[i].boost_bitmap = 0;
+				rp->v6.roam_prof[i].cca_meas_span = 0;
+				rp->v6.roam_prof[i].lp_roamscan_period = 0;
+				rp->v6.roam_prof[i].max_fullscan_period = 0;
 			}
 
 			rp_len += roam_prof_size;
@@ -15835,6 +16017,14 @@ wl_cfg80211_wbtext_delta_config(struct net_device *ndev, char *data, char *comma
 				}
 				if (rp->v4.roam_prof[i].channel_usage != 0) {
 					rp->v4.roam_prof[i].roam_delta = val;
+				}
+			} else if (roam_prof_ver == WL_ROAM_PROF_VER_5) {
+				if (rp->v6.roam_prof[i].fullscan_period == 0) {
+					WL_ERR(("%s: Incorrect fullscan period value\n", __func__));
+					break;
+				}
+				if (rp->v6.roam_prof[i].channel_usage != 0) {
+					rp->v6.roam_prof[i].roam_delta = val;
 				}
 			}
 			len += roam_prof_size;

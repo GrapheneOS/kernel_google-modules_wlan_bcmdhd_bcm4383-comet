@@ -283,7 +283,7 @@ typedef struct {
 	int (*recv_irb_from_ep)(void *bus, struct dbus_irb_rx *rxirb, uint ep_idx);
 
 	int (*readreg)(void *bus, uint32 regaddr, int datalen, uint32 *value);
-
+	int (*writereg)(void *bus, uint32 regaddr, int datalen, uint32 data);
 	/* Add from the bottom */
 } dbus_intf_t;
 
@@ -356,6 +356,7 @@ extern int dbus_pnp_disconnect(dbus_pub_t *pub);
 extern int dbus_iovar_op(dbus_pub_t *pub, const char *name,
 	void *params, int plen, void *arg, int len, bool set);
 int dbus_readreg(dbus_pub_t *, uint32 regaddr, int datalen, uint32 *value);
+int dbus_writereg(dbus_pub_t *, uint32 regaddr, int datalen, uint32 data);
 
 #ifdef BCMDBG
 extern void dbus_hist_dump(dbus_pub_t *pub, struct bcmstrbuf *b);

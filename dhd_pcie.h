@@ -311,6 +311,18 @@ typedef enum aggr_state {
 /* Max length of filename in IOVAR or in module parameter */
 #define DHD_MAX_PATH	2048u
 
+/* PTM related internal defines */
+#define PTM_VALIDATE_TS_RX		0x00000001u
+#define PTM_VALIDATE_TS_TX		0x00010000u
+#define PTM_BAD_RXTS_CNT_MASK		0x0000FF00u
+#define PTM_BAD_RXTS_CNT_SHF		8u
+#define PTM_BAD_TXTS_CNT_MASK		0xFF000000u
+#define PTM_BAD_TXTS_CNT_SHF		24u
+
+#define PTM_CLKINVALID_RX_TRAP_TH	0u
+#define PTM_CLKINVALID_TX_TRAP_TH	0u
+
+
 /** Instantiated once for each hardware (dongle) instance that this DHD manages */
 typedef struct dhd_bus {
 	dhd_pub_t	*dhd;	/**< pointer to per hardware (dongle) unique instance */
@@ -437,7 +449,6 @@ typedef struct dhd_bus {
 	uint32 pcie_mailbox_int;
 	bool	ltrsleep_on_unload;
 	uint	wait_for_d3_ack;
-	uint	wait_for_d0_ack;
 	uint16	max_tx_flowrings;
 	uint16	max_submission_rings;
 	uint16	max_completion_rings;
@@ -690,6 +701,42 @@ typedef struct dhd_bus {
 	uint32 lpbk_xfer_data_pattern_type; /*  data Pattern type DMA lpbk */
 	bool ltr_active_set_during_init;
 	uint32 etb_config_addr;
+
+	/* PTM validating related fields */
+
+	/* PTM txs counter/status */
+	ts_timestamp_t last_tx_ptm_ts;
+	uint32 txs_clkid_bad_ts; /* timestamp low = 0, high = 0 */
+	uint32 txs_clkid_invalid_clkid; /* clock ID is 0xF */
+	uint32 ptm_tx_ts_good_adopted_pkt_cnt; /* PTM clock, good pkts */
+	uint32 ptm_tx_ts_good_not_adopted_pkt_cnt; /* PTM clock, good pkts, ts in past */
+	uint32 ptm_tx_ts_not_adopted_pkt_cnt; /* PTM clock pkts with bad TS */
+	uint32 txs_fail_clkid_bad_ts; /* failed tx, clock ID not invalid */
+	uint32 txs_fail_clkid_inv; /* failed tx, clock ID invalid */
+	uint32 ptm_bad_txts_cont_cnt; /* count of successive pkts with bad txts */
+	uint32 ptm_bad_txts_cont_cnt_max; /* count of successive pkts with bad txts */
+	uint32 tot_txcpl_last; /* total rxcpl value at counter reset */
+
+	/* PTM rxs counter/status */
+	ts_timestamp_t last_rx_ptm_ts;
+	uint32 rxs_clkid_bad_ts;
+	uint32 rxs_clkid_invalid_clkid;
+	uint32 ptm_rx_ts_good_adopted_pkt_cnt;
+	uint32 ptm_rx_ts_good_not_adopted_pkt_cnt;
+	uint32 ptm_rx_ts_not_adopted_pkt_cnt;
+	uint32 ptm_bad_rxts_cont_cnt; /* count of successive pkts with bad txts */
+	uint32 ptm_bad_rxts_cont_cnt_max; /* max count of successive pkts with bad txts */
+	uint32 tot_rxcpl_last; /* total rxcpl value at counter reset */
+
+	/* ptm ts validation */
+	uint32	ptm_ts_validate;
+	bool ptm_rxts_validate;
+	bool ptm_txts_validate;
+	uint32 ptm_bad_rxts_trap_th;
+	uint32 ptm_bad_txts_trap_th;
+	bool ptm_host_ready_adopt_rx; /* rx: some systems host PTM gets reset on host sleep/wake */
+	bool ptm_host_ready_adopt_tx; /* tx: some systems host PTM gets reset on host sleep/wake */
+
 } dhd_bus_t;
 
 #ifdef DHD_PCIE_WRAPPER_DUMP

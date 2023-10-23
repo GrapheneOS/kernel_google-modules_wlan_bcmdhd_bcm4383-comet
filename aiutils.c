@@ -1362,15 +1362,6 @@ BCMPOSTTRAPFN(ai_core_reset)(si_t *sih, uint32 bits, uint32 resetbits)
 	_ai_core_reset(sih, bits, resetbits);
 }
 
-#ifdef BOOKER_NIC400_INF
-void
-BCMPOSTTRAPFN(ai_core_reset_ext)(const si_t *sih, uint32 bits, uint32 resetbits)
-{
-	_ai_core_reset(sih, bits, resetbits);
-}
-#endif /* BOOKER_NIC400_INF */
-
-
 void
 ai_core_cflags_wo(const si_t *sih, uint32 mask, uint32 val)
 {

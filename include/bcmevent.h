@@ -639,6 +639,10 @@ typedef struct wl_event_sdb_trans {
 #define WLC_E_SUP_IGTK_BAD_KEY_IDX	35u	/* Bad IGTK key index */
 #define WLC_E_SUP_BIGTK_BAD_KEY_IDX	36u	/* Bad BIGTK key index */
 #define WLC_E_SUP_BCN_PROT_DISABLED_AP	37u	/* Beacon Protection is disabled in the AP */
+#define WLC_E_SUP_GTK_BAD_LINK_ID	38u	/* Bad GTK link id */
+#define WLC_E_SUP_IGTK_BAD_LINK_ID	39u	/* Bad IGTK link id */
+#define WLC_E_SUP_BIGTK_BAD_LINK_ID	40u	/* Bad BIGTK link id */
+#define WLC_E_SUP_FT_ELEM_CNT_MISMATCH	41u	/* Element cnt mismatch with num of elem in FTIE */
 
 /* event msg for WLC_E_SUP_PTK_UPDATE */
 typedef struct wlc_sup_ptk_update {
@@ -1099,6 +1103,7 @@ typedef enum wl_nan_events {
 	WL_NAN_EVENT_SUSPENSION_IND		= 56,	/* Suspension Start/Stop status Indicatin */
 	WL_NAN_EVENT_TETHER_PEER_ADD		= 57,	/* NAN Tether client added on peer side */
 	WL_NAN_EVENT_TETHER_PEER_DEL		= 58,	/* NAN Tether client deleted on peer side */
+	WL_NAN_EVENT_UNENCRYPTED_AF_RECV	= 59,	/* Unencrypted Rx on secured link */
 	/* keep WL_NAN_EVENT_INVALID as the last element */
 	WL_NAN_EVENT_INVALID				/* delimiter for max value */
 } nan_app_events_e;
@@ -1687,6 +1692,7 @@ typedef struct wl_event_dynsar {
 #define BCN_MUTE_MITI_END	2u	/* Sent when beacon is received */
 #define BCN_MUTE_MITI_TIMEOUT	3u	/* Mitigation period is reached */
 #define BCN_MUTE_MITI_FAILED	4u	/* Mitigation attempt failed */
+#define BCN_MUTE_MITI_ML_INFO	5u	/* Other ML link is receiving beacon */
 
 /* Status code for sending event */
 #define BCN_MUTE_MITI_UNKNOWN			0u /* Mitigation status unknown */
@@ -1714,6 +1720,8 @@ typedef struct wl_event_dynsar {
 						     */
 #define BCN_MUTE_MITI_CSA			15u /* Mitigation end due to CSA */
 #define BCN_MUTE_MITI_SA_QUERY_FAIL		16u /* Mitigation failed due to SA query failure */
+#define BCN_MUTE_MITI_OTHER_ML_BCN_RCVD		17u /* The Other ML link receives the beacon */
+#define BCN_MUTE_MITI_OTHER_ML_NO_BCN		18u /* The Other ML link has no beacons */
 
 /* bcn_mute_miti event data */
 #define WLC_BCN_MUTE_MITI_EVENT_DATA_VER_1	1u
@@ -1732,6 +1740,15 @@ typedef struct wlc_bcn_mute_miti_event_data_v2 {
 	int8	rssi;		/* Mitigation Probe response RSSI */
 	uint8	PAD[1];		/* Pad to fit to 32 bit alignment */
 } wlc_bcn_mute_miti_event_data_v2_t;
+
+#define WLC_BCN_MUTE_MITI_EVENT_DATA_VER_3	3u
+typedef struct wlc_bcn_mute_miti_event_data_v3 {
+	uint16	version;	/* Structure version number */
+	uint16	length;		/* Length of the whole struct */
+	uint16	uatbtt_count;	/* Number of UATBTT during mitigation */
+	int8	rssi;		/* Probe response RSSI */
+	uint8	ml_idx;		/* MLD local link index */
+} wlc_bcn_mute_miti_event_data_v3_t;
 
 /* bcn_drift event data */
 #define WLC_BCN_DRIFT_EVENT_DATA_VER_1	(1u)

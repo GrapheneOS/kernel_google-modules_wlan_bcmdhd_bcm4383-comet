@@ -7738,6 +7738,7 @@ wl_is_channel_dynamic(struct bcm_cfg80211 *cfg, chanspec_t in_chspec)
 	u32 in_chan_band;
 	bool dyn_indoor = !!(cfg->dyn_chan_policy & DYN_CHAN_POLICY_INDOOR);
 	bool dyn_dfs = !!(cfg->dyn_chan_policy & DYN_CHAN_POLICY_DFS);
+	u8 max_num_chans = 0;
 
 	list = cfg->chan_info_list;
 	list_count = ((wl_chanspec_list_v1_t *)list)->count;
@@ -7760,10 +7761,14 @@ wl_is_channel_dynamic(struct bcm_cfg80211 *cfg, chanspec_t in_chspec)
 
 		if ((in_chan_band == CHSPEC_BAND(chspec)) &&
 				(CHSPEC_BW(chspec) == WL_CHANSPEC_BW_20)) {
-			for (j = 0; j < MAX_20MHZ_CHANNELS; j++) {
+			max_num_chans =
+				MIN(wl_cfgscan_get_max_num_chans_per_bw(chspec),
+					MAX_20MHZ_CHANNELS);
+
+			for (j = 0; j < max_num_chans; j++) {
 				if (!chan_array[j]) {
 					/* if there are no more subband channels, exit the loop */
-					break;
+					continue;
 				}
 				WL_DBG(("sta_chanspec:%x chspec:%x channel:%d band:%d bw:%d\n",
 					in_chspec, chspec, chan_array[j],
@@ -7883,4 +7888,30 @@ wl_cfgscan_get_bw_chspec(chanspec_t *chspec, u32 bw)
 			cur_chspec, *chspec, bw,
 			wf_chspec_primary20_chan(*chspec)));
 	return BCME_OK;
+}
+
+u8 wl_cfgscan_get_max_num_chans_per_bw(chanspec_t chspec)
+{
+	u8 max_num_chans = 0;
+	switch (CHSPEC_BW(chspec)) {
+		case WL_CHANSPEC_BW_20:
+			max_num_chans = WF_NUM_SIDEBANDS_20MHZ;
+			break;
+		case WL_CHANSPEC_BW_40:
+			max_num_chans = WF_NUM_SIDEBANDS_40MHZ;
+			break;
+		case WL_CHANSPEC_BW_80:
+			max_num_chans = WF_NUM_SIDEBANDS_80MHZ;
+			break;
+		case WL_CHANSPEC_BW_160:
+			max_num_chans = WF_NUM_SIDEBANDS_160MHZ;
+			break;
+		case WL_CHANSPEC_BW_320:
+			max_num_chans = WF_NUM_SIDEBANDS_320MHZ;
+			break;
+		default:
+			WL_ERR(("Invalid chanspec\n"));
+
+	}
+	return max_num_chans;
 }
