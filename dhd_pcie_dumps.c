@@ -405,6 +405,8 @@ dhd_bus_clearcounts(dhd_pub_t *dhdp)
 	dhdp->rx_pktgetpool_fail = 0;
 
 	dhd_clear_dpc_histos(dhdp);
+
+	dhd_prot_ptm_stats_clr(dhdp);
 }
 
 #ifdef BCM_BUZZZ
@@ -1125,6 +1127,9 @@ dhd_bus_counters(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf)
 	dhd_bus_dump_flowring(dhdp, strbuf);
 
 	dhd_dump_dpc_histos(dhdp, strbuf);
+
+	dhd_prot_ptm_stats_dump(dhdp, strbuf);
+
 }
 
 /** Add bus dump output to a buffer */

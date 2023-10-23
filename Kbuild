@@ -463,7 +463,10 @@ DHDCFLAGS += -DWL_P2P_RAND
 DHDCFLAGS += -DWL_CUSTOM_MAPPING_OF_DSCP
 # Enable below define for production
 ifneq ($(CONFIG_SOC_GOOGLE),)
-#DHDCFLAGS += -DMACADDR_PROVISION_ENFORCED
+  # temporary disable for 4383. Must be enabled for production.
+  ifeq ($(CONFIG_BCM4383),)
+    DHDCFLAGS += -DMACADDR_PROVISION_ENFORCED
+  endif
 endif
 ifneq ($(CONFIG_BCMDHD_PCIE),)
 	DHDCFLAGS += -DDHD_WAKE_STATUS
@@ -795,11 +798,45 @@ DHDCFLAGS += -DMAX_PFN_LIST_COUNT=16
 # Enable idsup for 4-way HS offload
 DHDCFLAGS += -DBCMSUP_4WAY_HANDSHAKE -DWL_ENABLE_IDSUP
 
-# Softap authentication offload - configurable by module param. Disabled by default.
-DHDCFLAGS += -DWL_IDAUTH
+# Enable idauth for AP 4-way HS offload
+#DHDCFLAGS += -DWL_IDAUTH
+
+# Enable SAE standard kernel path
+#DHDCFLAGS += -DWL_SAE_STD_API
 
 # STA DUMP
 DHDCFLAGS += -DWL_BSS_STA_INFO
+
+# Disable roam for APSTA scenarios for dynamic rsdb supported chips
+# For other chips, this define will not have any impact.
+#DHDCFLAGS += -DDYN_RSDB_ROAM_DISABLE
+
+ifneq ($(CONFIG_PORT_AUTH_BKPORT),)
+    # Support for TDI, P2P GC.
+    DHDCFLAGS += -DWL_MLO_BKPORT_NEW_PORT_AUTH
+    # Enable AP port auth support
+    DHDCFLAGS += -DWL_AP_PORT_AUTH_BKPORT
+    $(warning "AUTH Backported kernel")
+endif
+ifneq ($(CONFIG_AP_4WAY_HS_BKPORT),)
+    # Enable AP_PSK support
+	DHDCFLAGS += -DWL_AP_4WAY_HS_BKPORT
+    $(warning "AP 4WAY HS Backported kernel")
+endif
+ifneq ($(CONFIG_SAE_AP_CAP_BKPORT),)
+    # Enable SAE AP capability backport
+    DHDCFLAGS += -DWL_SAE_AP_CAP_BKPORT
+    $(warning "SAE AP Backported kernel")
+endif
+ifneq ($(CONFIG_SAE_PWE_BKPORT),)
+    # Enable SAE PWE standard path backport
+    DHDCFLAGS += -DWL_SAE_PWE_BKPORT
+    $(warning "AP PWE Backported kernel")
+endif
+ifneq ($(CONFIG_OWE_OFFLD_BKPORT),)
+    DHDCFLAGS += -DWL_OWE_OFFLD_BKPORT
+    $(warning "OWE Backported kernel")
+endif
 
 ##########################
 # driver type
@@ -860,7 +897,7 @@ ifneq ($(filter y, $(CONFIG_BCM4389) $(CONFIG_BCM4398) $(CONFIG_BCM4390) $(CONFI
     ifneq ($(CONFIG_BCMDHD_PCIE),)
         DHDCFLAGS += -DPCIE_FULL_DONGLE -DBCMPCIE -DCUSTOM_DPC_PRIO_SETTING=-1
 	# NCI
-        DHDCFLAGS += -DSOCI_NCI_BUS -DBOOKER_NIC400_INF
+        DHDCFLAGS += -DSOCI_NCI_BUS
         # tput enhancement
         DHDCFLAGS += -DCUSTOM_AMPDU_BA_WSIZE=64
         DHDCFLAGS += -DPROP_TXSTATUS_VSDB

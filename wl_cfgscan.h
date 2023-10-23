@@ -249,4 +249,5 @@ extern s32
 wl_cfgscan_get_bw_chspec(chanspec_t *chspec, u32 bw);
 extern s32 wl_cfgscan_get_chan_info(struct bcm_cfg80211 *cfg,
 		u32 *chan_info, chanspec_t in_chspec);
+extern u8 wl_cfgscan_get_max_num_chans_per_bw(chanspec_t chspec);
 #endif /* _wl_cfgscan_h_ */
