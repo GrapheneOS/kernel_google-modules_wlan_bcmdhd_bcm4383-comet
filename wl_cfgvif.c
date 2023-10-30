@@ -7708,6 +7708,13 @@ wl_cfg80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 		cfg->ioctl_buf, WLC_IOCTL_SMLEN, &cfg->ioctl_buf_sync);
 	if (err < 0) {
 		WL_ERR(("Failed to switch channel, err=%d\n", err));
+		if (err == BCME_NOTUP) {
+			/* Map NOTUP(-4) error to NOTREADY(-25) , -4 is causing
+			 * hang in kernel/libl layer.. GG bug:297840833
+			 */
+			WL_ERR(("Mapping error code -4 to -25\n"));
+			err = BCME_NOTREADY;
+		}
 	}
 
 	return err;
