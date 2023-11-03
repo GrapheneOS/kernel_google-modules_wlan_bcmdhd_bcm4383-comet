@@ -188,7 +188,7 @@ static int wl_cfgvendor_get_usable_channels_handler(struct bcm_cfg80211 *cfg,
 #ifdef WL_NAN_INSTANT_MODE
 static int wl_cfgvendor_get_nan_instant_chan(struct bcm_cfg80211 *cfg,
 	wl_chanspec_list_v1_t *chan_list, uint32 band_mask,
-	chanspec_t *nan_inst_mode_chspec);
+	chanspec_t *nan_inst_mode_chspecs);
 #endif /* WL_NAN_INSTANT_MODE */
 
 char*
@@ -12363,11 +12363,11 @@ wl_cfgvendor_set_dtim_config(struct wiphy *wiphy,
 #ifdef WL_NAN_INSTANT_MODE
 static int wl_cfgvendor_get_nan_instant_chan(struct bcm_cfg80211 *cfg,
 	wl_chanspec_list_v1_t *chan_list, uint32 band_mask,
-	chanspec_t *nan_inst_mode_chspec)
+	chanspec_t *nan_inst_mode_chspecs)
 {
 	int err = BCME_OK;
 	int band = 0;
-	uint32 channel;
+	uint32 channel = 0;
 	uint8 nan_2g = 0, nan_pri_5g = 0, nan_sec_5g = 0;
 
 	wl_cfgnan_inst_chan_support(cfg, chan_list,
@@ -12387,27 +12387,27 @@ static int wl_cfgvendor_get_nan_instant_chan(struct bcm_cfg80211 *cfg,
 		goto exit;
 	}
 
-	if ((band_mask & WLAN_MAC_5_0_BAND) && (nan_pri_5g)) {
-		channel = nan_pri_5g;
-		band = WL_CHANSPEC_BAND_5G;
-	} else if ((band_mask & WLAN_MAC_5_0_BAND) && (nan_sec_5g)) {
-		channel = nan_sec_5g;
-		band = WL_CHANSPEC_BAND_5G;
-	} else if ((band_mask & WLAN_MAC_2_4_BAND) && (nan_2g)) {
-		channel = nan_2g;
-		band = WL_CHANSPEC_BAND_2G;
-	} else {
-		WL_ERR(("No usable channels for nan\n"));
-		err = BCME_NOTFOUND;
-		goto exit;
+	if (band_mask & WLAN_MAC_5_0_BAND) {
+		if (nan_pri_5g) {
+			channel = nan_pri_5g;
+		} else if (nan_sec_5g) {
+			channel = nan_sec_5g;
+		}
+
+		if (channel) {
+			band = WL_CHANSPEC_BAND_5G;
+			nan_inst_mode_chspecs[WLC_BAND_5G] =
+				wl_freq_to_chanspec(wl_channel_to_frequency(channel,
+					band));
+		}
+
 	}
-	if ((*nan_inst_mode_chspec =
-		wl_freq_to_chanspec(wl_channel_to_frequency(channel, band))) == INVCHANSPEC) {
-		WL_ERR(("Invalid instant mode usable channel: %d, band: %d\n", channel, band));
-		err = BCME_ERROR;
-		goto exit;
+
+	if ((band_mask & WLAN_MAC_2_4_BAND) && (nan_2g)) {
+		nan_inst_mode_chspecs[WLC_BAND_2G] =
+			wl_freq_to_chanspec(wl_channel_to_frequency(nan_2g,
+				WL_CHANSPEC_BAND_2G));
 	}
-	WL_INFORM_MEM(("Instant mode usable channel for nan: %d\n", channel));
 exit:
 	return err;
 }
@@ -12449,11 +12449,12 @@ void wl_cfgvendor_usable_channels_filter(struct bcm_cfg80211 *cfg, uint32 cur_ch
 	u32 sta_band = 0;
 	uint32 filter = 0;
 	bool restrict_chan = false;
-	u32 sta_chaninfo = 0;
+	u32 sta_chaninfo = 0, chan_info = 0;
 	chanspec_t sta_chspec = 0;
 	int i = 0;
 	bool match_found = FALSE;
 	bool emlsr_sta = FALSE;
+	u8 max_num_chans = 0;
 
 	/* If there is STA connection on 5GHz DFS channel,
 	 * none of the 5GHz channels are usable for SoftAP
@@ -12506,7 +12507,7 @@ void wl_cfgvendor_usable_channels_filter(struct bcm_cfg80211 *cfg, uint32 cur_ch
 					filter |= (1U << WIFI_INTERFACE_SOFTAP);
 				} else if (chan_array[WLC_BAND_6G].chspec &&
 					(cur_band == WLC_BAND_5G)) {
-					/* sta connected in 5g and curband is 6G, filter out. */
+					/* sta connected in 6g and curband is 5G, filter out. */
 					filter |= (1U << WIFI_INTERFACE_SOFTAP);
 				}
 			}
@@ -12515,49 +12516,70 @@ void wl_cfgvendor_usable_channels_filter(struct bcm_cfg80211 *cfg, uint32 cur_ch
 				/* check for any overlapping channels */
 				wl_chan_info_t *per_link_chan = &chan_array[sta_band];
 				u8 *chan_array = per_link_chan->array;
-				u32 chan_info  = per_link_chan->chaninfo;
-
-				/* if channel is overlapping for the incoming chanspec */
-				for (i = 0; i < MAX_20MHZ_CHANNELS; i++) {
-
-					if (!chan_array[i]) {
-						break;
-					}
-
-					if (chan_array[i] == wf_chspec_ctlchan(cur_chspec)) {
-						WL_DBG(("chan:%d mached. band:%d chaninfo:%x\n",
-							chan_array[i], sta_band, chan_info));
-						sta_chaninfo = chan_info;
-						match_found = TRUE;
-						break;
-					}
-				}
-
-				/* if sta is connected in same band, allow only SCC */
-				if (!match_found || (emlsr_sta && !per_link_chan->is_primary)) {
-					WL_DBG(("filter AP chspec:%x match:%d non_pri_emlsr:%d\n",
-						sta_chspec, match_found,
-						(emlsr_sta && !per_link_chan->is_primary)));
+				chan_info  = per_link_chan->chaninfo;
+#ifdef WL_SOFTAP_6G
+				if ((sta_band == WLC_BAND_6G) &&
+					(!(chan_info & WL_CHAN_BAND_6G_PSC) ||
+						!(chan_info & WL_CHAN_BAND_6G_VLP))) {
+					/* sta connected on non psc, filter out. */
 					filter |= (1U << WIFI_INTERFACE_SOFTAP);
-				}
 
-				restrict_chan = ((sta_chaninfo & WL_CHAN_RADAR) ||
-						(sta_chaninfo & WL_CHAN_PASSIVE)||
-						(sta_chaninfo & WL_CHAN_CLM_RESTRICTED) ||
-						(sta_chaninfo & WL_CHAN_INDOOR_ONLY));
+				} else
+					/* filter out non-overlapping channels */
+#endif /* WL_SOFTAP_6G */
+				{
+					max_num_chans =
+						MIN(wl_cfgscan_get_max_num_chans_per_bw(cur_chspec),
+							MAX_20MHZ_CHANNELS);
 
-				WL_TRACE(("in_chspec:%x chspec:%x chaninfo:%x cur_band:%d "
-					"sta_band:%d restrict_chan:%d emlsr:%d pri_link:%d\n",
-					cur_chspec, sta_chspec, chan_info, cur_band, sta_band,
-					restrict_chan, emlsr_sta, per_link_chan->is_primary));
-				/* Filter out SOFTAP when STA connected DFS channel */
-				if (sta_band == WLC_BAND_5G && restrict_chan) {
-					if (cur_band == WLC_BAND_5G) {
-						WL_DBG(("filter AP for chspec:%x\n", sta_chspec));
+					/* if channel is overlapping for the incoming chanspec */
+					for (i = 0; i < max_num_chans; i++) {
+						if (!chan_array[i]) {
+							continue;
+						}
+
+						if (chan_array[i] ==
+							wf_chspec_ctlchan(cur_chspec)) {
+							WL_DBG(("chan:%d matched. band:%d "
+								"chaninfo:%x\n",
+								chan_array[i], sta_band,
+								chan_info));
+							sta_chaninfo = chan_info;
+							match_found = TRUE;
+							break;
+						}
+					}
+
+					/* if sta is connected in same band, allow only SCC */
+					if (!match_found ||
+						(emlsr_sta && !per_link_chan->is_primary)) {
+						WL_DBG(("filter AP chspec:%x match:%d"
+							" non_pri_emlsr:%d\n",
+							sta_chspec, match_found,
+							(emlsr_sta && !per_link_chan->is_primary)));
 						filter |= (1U << WIFI_INTERFACE_SOFTAP);
 					}
-				}
 
+					restrict_chan = ((sta_chaninfo & WL_CHAN_RADAR) ||
+							(sta_chaninfo & WL_CHAN_PASSIVE)||
+							(sta_chaninfo & WL_CHAN_CLM_RESTRICTED) ||
+							(sta_chaninfo & WL_CHAN_INDOOR_ONLY));
+
+					WL_TRACE(("in_chspec:%x chspec:%x chaninfo:%x cur_band:%d "
+							"sta_band:%d restrict_chan:%d emlsr:%d"
+							" pri_link:%d\n",
+							cur_chspec, sta_chspec, chan_info, cur_band,
+							sta_band, restrict_chan, emlsr_sta,
+							per_link_chan->is_primary));
+					/* Filter out SOFTAP when STA connected DFS channel */
+					if (sta_band == WLC_BAND_5G && restrict_chan) {
+						if (cur_band == WLC_BAND_5G) {
+							WL_DBG(("filter AP for chspec:%x\n",
+								sta_chspec));
+							filter |= (1U << WIFI_INTERFACE_SOFTAP);
+						}
+					}
+				}
 			}
 		} else if (conn[WL_IF_TYPE_AP] == 1U) {
 			filter |= ((1U << WIFI_INTERFACE_P2P_GO) |
@@ -12642,7 +12664,7 @@ static int wl_cfgvendor_get_usable_channels_handler(struct bcm_cfg80211 *cfg,
 	uint32 sta_assoc_freq = 0;
 	bool is_unii4 = false;
 #ifdef WL_NAN_INSTANT_MODE
-	chanspec_t nan_inst_mode_chspec = INVCHANSPEC;
+	chanspec_t nan_inst_mode_chspecs[WLC_BAND_6G + 1];
 #endif /* WL_NAN_INSTANT_MODE */
 	struct net_info *iter, *next, *netinfo;
 	u16 sta_band;
@@ -12651,6 +12673,9 @@ static int wl_cfgvendor_get_usable_channels_handler(struct bcm_cfg80211 *cfg,
 	struct wireless_dev *wdev;
 	wl_ap_oper_data_t ap_oper_data = {0};
 
+#ifdef WL_NAN_INSTANT_MODE
+	bzero(nan_inst_mode_chspecs, sizeof(nan_inst_mode_chspecs));
+#endif /* WL_NAN_INSTANT_MODE */
 	bzero(u_info->channels, sizeof(*u_info->channels) * u_info->max_size);
 	/* Get chan_info_list or chanspec from FW */
 
@@ -12687,7 +12712,7 @@ static int wl_cfgvendor_get_usable_channels_handler(struct bcm_cfg80211 *cfg,
 		(u_info->filter_mask & WIFI_USABLE_CHANNEL_FILTER_NAN_INSTANT_MODE)) {
 		if (wl_cfgvendor_get_nan_instant_chan(cfg,
 			(wl_chanspec_list_v1_t *)chan_list,
-			u_info->band_mask, &nan_inst_mode_chspec) != BCME_OK) {
+			u_info->band_mask, nan_inst_mode_chspecs) != BCME_OK) {
 			WL_ERR(("Failed to get the instant nan mode chanspec!!\n"));
 		}
 	}
@@ -12814,16 +12839,14 @@ static int wl_cfgvendor_get_usable_channels_handler(struct bcm_cfg80211 *cfg,
 			if (!is_unii4) {
 				if (CHSPEC_IS6G(chspec)) {
 #if defined(WL_NAN) && defined(WL_NAN_6G)
-					if (cfg->nancfg->is_6g_nan_supported) {
 #ifdef WL_NAN_INSTANT_MODE
-						if (wl_cfgvendor_is_nan_instant_mask_set(u_info)) {
-							WL_DBG(("No support of nan "
+					if (wl_cfgvendor_is_nan_instant_mask_set(u_info)) {
+						WL_DBG(("No support of nan "
 								"instant 6g channel\n"));
-						} else
+					} else
 #endif /* WL_NAN_INSTANT_MODE */
-						{
-							mask |= (1 << WIFI_INTERFACE_NAN);
-						}
+					{
+						mask |= (1 << WIFI_INTERFACE_NAN);
 					}
 #endif /* WL_NAN && WL_NAN_6G */
 #ifdef WL_SOFTAP_6G
@@ -12840,7 +12863,10 @@ static int wl_cfgvendor_get_usable_channels_handler(struct bcm_cfg80211 *cfg,
 					}
 #ifdef WL_NAN_INSTANT_MODE
 					if (wl_cfgvendor_is_nan_instant_mask_set(u_info)) {
-						if (chspec == nan_inst_mode_chspec) {
+						if ((chspec ==
+							nan_inst_mode_chspecs[WLC_BAND_2G]) ||
+							(chspec ==
+							nan_inst_mode_chspecs[WLC_BAND_5G])) {
 							mask |= (1 << WIFI_INTERFACE_NAN);
 						}
 					} else
