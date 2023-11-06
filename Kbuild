@@ -338,10 +338,6 @@ ifneq ($(CONFIG_SOC_GOOGLE),)
 	# MSI supported in GOOGLE SOC
 	DHDCFLAGS += -DDHD_MSI_SUPPORT
 	# Tx/Rx tasklet bounds
-	DHDCFLAGS += -DDHD_TX_CPL_BOUND=64
-	DHDCFLAGS += -DDHD_TX_POST_BOUND=128
-	DHDCFLAGS += -DDHD_RX_CPL_POST_BOUND=96
-	DHDCFLAGS += -DDHD_CTRL_CPL_POST_BOUND=8
 	DHDCFLAGS += -DDHD_LB_TXBOUND=32
 	# Detect NON DMA M2M corruption (MFG only)
 	DHDCFLAGS += -DDHD_NON_DMA_M2M_CORRUPTION
@@ -361,6 +357,10 @@ ifneq ($(CONFIG_SOC_GOOGLE),)
 	DHDCFLAGS += -DDHD_SKIP_COREDUMP_OLDER_CHIPS
 	# Skip coredump for continousy pkt drop health check
 	DHDCFLAGS += -DSKIP_COREDUMP_PKTDROP_RXHC
+	# Boost host cpufreq to max for peak tput. default is false
+	DHDCFLAGS += -DDHD_HOST_CPUFREQ_BOOST
+	# Boost host cpufreq to max for peak tput. default is true
+	DHDCFLAGS += -DDHD_HOST_CPUFREQ_BOOST_DEFAULT_ENAB
 endif
 endif
 
@@ -384,7 +384,6 @@ endif
 # CUSTOMER2 flags
 
 # Basic / Common Feature
-DHDCFLAGS += -DDHDTCPACK_SUPPRESS
 DHDCFLAGS += -DUSE_WL_FRAMEBURST
 DHDCFLAGS += -DUSE_WL_TXBF
 DHDCFLAGS += -DSOFTAP_UAPSD_OFF
@@ -460,7 +459,10 @@ DHDCFLAGS += -DWL_P2P_RAND
 DHDCFLAGS += -DWL_CUSTOM_MAPPING_OF_DSCP
 # Enable below define for production
 ifneq ($(CONFIG_SOC_GOOGLE),)
-#DHDCFLAGS += -DMACADDR_PROVISION_ENFORCED
+  # temporary disable for 4383. Must be enabled for production.
+  ifeq ($(CONFIG_BCM4383),)
+    DHDCFLAGS += -DMACADDR_PROVISION_ENFORCED
+  endif
 endif
 ifneq ($(CONFIG_BCMDHD_PCIE),)
 	DHDCFLAGS += -DDHD_WAKE_STATUS
@@ -562,8 +564,6 @@ endif
 DHDCFLAGS += -DCUSTOM_TDLS_IDLE_MODE_SETTING=10000
 DHDCFLAGS += -DCUSTOM_TDLS_RSSI_THRESHOLD_HIGH=-80
 DHDCFLAGS += -DCUSTOM_TDLS_RSSI_THRESHOLD_LOW=-85
-DHDCFLAGS += -DCUSTOM_TCPACK_SUPP_RATIO=15
-DHDCFLAGS += -DCUSTOM_TCPACK_DELAY_TIME=10
 DHDCFLAGS += -DD3_ACK_RESP_TIMEOUT=4000
 DHDCFLAGS += -DIOCTL_RESP_TIMEOUT=5000
 DHDCFLAGS += -DMAX_DTIM_ALLOWED_INTERVAL=925
@@ -794,11 +794,45 @@ DHDCFLAGS += -DMAX_PFN_LIST_COUNT=16
 # Enable idsup for 4-way HS offload
 DHDCFLAGS += -DBCMSUP_4WAY_HANDSHAKE -DWL_ENABLE_IDSUP
 
-# Softap authentication offload - configurable by module param. Disabled by default.
-DHDCFLAGS += -DWL_IDAUTH
+# Enable idauth for AP 4-way HS offload
+#DHDCFLAGS += -DWL_IDAUTH
+
+# Enable SAE standard kernel path
+#DHDCFLAGS += -DWL_SAE_STD_API
 
 # STA DUMP
 DHDCFLAGS += -DWL_BSS_STA_INFO
+
+# Disable roam for APSTA scenarios for dynamic rsdb supported chips
+# For other chips, this define will not have any impact.
+#DHDCFLAGS += -DDYN_RSDB_ROAM_DISABLE
+
+ifneq ($(CONFIG_PORT_AUTH_BKPORT),)
+    # Support for TDI, P2P GC.
+    DHDCFLAGS += -DWL_MLO_BKPORT_NEW_PORT_AUTH
+    # Enable AP port auth support
+    DHDCFLAGS += -DWL_AP_PORT_AUTH_BKPORT
+    $(warning "AUTH Backported kernel")
+endif
+ifneq ($(CONFIG_AP_4WAY_HS_BKPORT),)
+    # Enable AP_PSK support
+	DHDCFLAGS += -DWL_AP_4WAY_HS_BKPORT
+    $(warning "AP 4WAY HS Backported kernel")
+endif
+ifneq ($(CONFIG_SAE_AP_CAP_BKPORT),)
+    # Enable SAE AP capability backport
+    DHDCFLAGS += -DWL_SAE_AP_CAP_BKPORT
+    $(warning "SAE AP Backported kernel")
+endif
+ifneq ($(CONFIG_SAE_PWE_BKPORT),)
+    # Enable SAE PWE standard path backport
+    DHDCFLAGS += -DWL_SAE_PWE_BKPORT
+    $(warning "AP PWE Backported kernel")
+endif
+ifneq ($(CONFIG_OWE_OFFLD_BKPORT),)
+    DHDCFLAGS += -DWL_OWE_OFFLD_BKPORT
+    $(warning "OWE Backported kernel")
+endif
 
 ##########################
 # driver type
@@ -859,7 +893,7 @@ ifneq ($(filter y, $(CONFIG_BCM4389) $(CONFIG_BCM4398) $(CONFIG_BCM4390) $(CONFI
     ifneq ($(CONFIG_BCMDHD_PCIE),)
         DHDCFLAGS += -DPCIE_FULL_DONGLE -DBCMPCIE -DCUSTOM_DPC_PRIO_SETTING=-1
 	# NCI
-        DHDCFLAGS += -DSOCI_NCI_BUS -DBOOKER_NIC400_INF
+        DHDCFLAGS += -DSOCI_NCI_BUS
         # tput enhancement
         DHDCFLAGS += -DCUSTOM_AMPDU_BA_WSIZE=64
         DHDCFLAGS += -DPROP_TXSTATUS_VSDB
@@ -951,6 +985,11 @@ ifneq ($(CONFIG_SOC_GOOGLE),)
 	    BCM_WLAN_CHIP_SUFFIX = 4383
 	    DHDCFLAGS += -DBCMPCI_DEV_ID=0x4449
 	    DHDCFLAGS += -DBCMPCI_NOOTP_DEV_ID=0x4383 -DBCM4383_CHIP_DEF
+
+	    # for max tput, enable ack suppress only for 4383
+	    DHDCFLAGS += -DDHDTCPACK_SUPPRESS
+	    DHDCFLAGS += -DCUSTOM_TCPACK_SUPP_RATIO=15
+	    DHDCFLAGS += -DCUSTOM_TCPACK_DELAY_TIME=10
       endif
     endif
     ifneq ($(CONFIG_BCMDHD_PCIE),)

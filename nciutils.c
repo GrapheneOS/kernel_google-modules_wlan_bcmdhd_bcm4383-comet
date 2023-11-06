@@ -2218,16 +2218,8 @@ BCMPOSTTRAPFN(nci_core_reset_enable)(const si_t *sih, uint32 bits, uint32 resetb
 		if (core->desc[iface_idx].is_shared_pmni) {
 			continue;
 		}
-#ifdef BOOKER_NIC400_INF
-		if (core->desc[iface_idx].node_type == NODE_TYPE_NIC400) {
-			nci_setcoreidx_wrap(sih, sii->curidx, iface_idx);
-			ai_core_reset_ext(sih, bits, resetbits);
-		} else
-#endif /* BOOKER_NIC400_INF */
-		{
-			nci_setcoreidx_wrap(sih, sii->curidx, iface_idx);
-			nci_core_reset_iface(sih, bits, resetbits, iface_idx, FALSE);
-		}
+		nci_setcoreidx_wrap(sih, sii->curidx, iface_idx);
+		nci_core_reset_iface(sih, bits, resetbits, iface_idx, FALSE);
 	}
 
 	/* Force the clock enable. */
@@ -2300,16 +2292,7 @@ nci_core_disable(const si_t *sih, uint32 bits)
 		goto end;
 	}
 
-#ifdef BOOKER_NIC400_INF
-	/* If Wrapper is of NIC400, then call AI functionality */
-	if (nci->cores[sii->curidx].desc[iface_idx].node_type == NODE_TYPE_NIC400) {
-		ai_core_disable(sih, bits);
-		goto end;
-	} else
-#endif /* BOOKER_NIC400_INF */
-	{
-		nci_core_reset_enable(sih, bits, 0u, FALSE);
-	}
+	nci_core_reset_enable(sih, bits, 0u, FALSE);
 end:
 	return;
 }
@@ -2322,21 +2305,6 @@ BCMPOSTTRAPFN(nci_iscoreup)(const si_t *sih)
 	nci_cores_t *core = &nci->cores[sii->curidx];
 	amni_regs_t *amni = (amni_regs_t *)(uintptr)sii->curwrap;
 	uint32 reset_ctrl;
-
-#ifdef BOOKER_NIC400_INF
-	int32 iface_idx = nci_find_first_wrapper_idx(nci, sii->curidx);
-
-	if (iface_idx < 0) {
-		NCI_ERROR(("nci_iscoreup: First Wrapper is not found\n"));
-		ASSERT(0u);
-		return FALSE;
-	}
-
-	/* If Wrapper is of NIC400, then call AI functionality */
-	if (core->desc[iface_idx].master && (core->desc[iface_idx].node_type == NODE_TYPE_NIC400)) {
-		return ai_iscoreup(sih);
-	}
-#endif /* BOOKER_NIC400_INF */
 
 	if (SRPWR_ENAB() && core->domain != DOMAIN_AAON) {
 		si_srpwr_request(sih, 1u << core->domain, 1u << core->domain);
@@ -2501,7 +2469,7 @@ BCMPOSTTRAPFN(nci_get_axi_addr)(const si_t *sih, uint32 *size, uint32 baidx)
 	}
 	if (iface_idx < core_info->iface_cnt) {
 		if ((core_info->desc[iface_idx].num_addr_reg > baidx) &&
-			(&core_info->desc[iface_idx].sp[baidx] != NULL)) {
+			(core_info->desc[iface_idx].sp != NULL)) {
 			addr = core_info->desc[iface_idx].sp[baidx].addrl;
 			if (size) {
 				uint32 adesc = core_info->desc[iface_idx].sp[baidx].adesc;
@@ -2542,7 +2510,7 @@ BCMPOSTTRAPFN(nci_get_core_baaddr)(const si_t *sih, uint32 *size, int32 baidx)
 	}
 	if (iface_idx < core_info->iface_cnt) {
 		if ((core_info->desc[iface_idx].num_addr_reg > baidx) &&
-			(&core_info->desc[iface_idx].sp[baidx] != NULL)) {
+			(core_info->desc[iface_idx].sp != NULL)) {
 			addr = core_info->desc[iface_idx].sp[baidx].addrl;
 			if (size) {
 				uint32 adesc = core_info->desc[iface_idx].sp[baidx].adesc;
@@ -2606,6 +2574,7 @@ BCMPOSTTRAPFN(nci_core_cflags)(const si_t *sih, uint32 mask, uint32 val)
 	uint32 orig_bar0_win1 = 0;
 	int32 iface_idx;
 	uint32 w;
+	volatile dmp_regs_t *io = sii->curwrap;
 
 	BCM_REFERENCE(iface_idx);
 
@@ -2619,24 +2588,9 @@ BCMPOSTTRAPFN(nci_core_cflags)(const si_t *sih, uint32 mask, uint32 val)
 		goto end;
 	}
 
-#ifdef BOOKER_NIC400_INF
-	/* If Wrapper is of NIC400, then call AI functionality */
-	if (core->desc[iface_idx].master && (core->desc[iface_idx].node_type == NODE_TYPE_NIC400)) {
-		aidmp_t *ai = sii->curwrap;
-
-		if (mask || val) {
-			 w = ((R_REG(sii->osh, &ai->ioctrl) & ~mask) | val);
-			W_REG(sii->osh, &ai->ioctrl, w);
-		}
-		reg_read = R_REG(sii->osh, &ai->ioctrl);
-	} else
-#endif /* BOOKER_NIC400_INF */
-	{
-		volatile dmp_regs_t *io = sii->curwrap;
-
-		/* BOOKER */
-		/* Point to OOBR base */
-		switch (BUSTYPE(sih->bustype)) {
+	/* BOOKER */
+	/* Point to OOBR base */
+	switch (BUSTYPE(sih->bustype)) {
 		case SI_BUS:
 			io = (volatile dmp_regs_t*)
 				REG_MAP(GET_OOBR_BASE(nci->cc_erom2base), SI_CORE_SIZE);
@@ -2655,33 +2609,31 @@ BCMPOSTTRAPFN(nci_core_cflags)(const si_t *sih, uint32 mask, uint32 val)
 		default:
 			NCI_ERROR(("nci_core_cflags Invalid bustype %d\n", BUSTYPE(sih->bustype)));
 			goto end;
-		}
-
-		if (core->desc[iface_idx].oobr_core) {
-			/* Point to DMP Control */
-			io = (dmp_regs_t*)(NCI_ADD_ADDR(io, nci->cores[sii->curidx].dmp_regs_off));
-
-			if (mask || val) {
-				w = ((R_REG(sii->osh, &io->dmpctrl) & ~mask) | val);
-				W_REG(sii->osh, &io->dmpctrl, w);
-				NCI_INFO(("nci_core_cflags coreid.unit 0x%x.%d WREG dmpctrl "
-					"value=0x%x\n", nci->cores[sii->curidx].coreid,
-					nci->cores[sii->curidx].coreunit, w));
-
-				/* poll for the reset to happen or wait for NCI_SPINWAIT_TIMEOUT */
-				SPINWAIT_TRAP(((reg_read = R_REG(nci->osh, &io->dmpctrl)) !=
-					w), NCI_SPINWAIT_TIMEOUT);
-			}
-			reg_read = R_REG(sii->osh, &io->dmpctrl);
-		}
-
-		/* Point back to original base */
-		if (BUSTYPE(sih->bustype) == PCI_BUS) {
-			OSL_PCI_WRITE_CONFIG(nci->osh, PCI_BAR0_WIN,
-				PCI_ACCESS_SIZE, orig_bar0_win1);
-		}
 	}
 
+	if (core->desc[iface_idx].oobr_core) {
+		/* Point to DMP Control */
+		io = (dmp_regs_t*)(NCI_ADD_ADDR(io, nci->cores[sii->curidx].dmp_regs_off));
+
+		if (mask || val) {
+			w = ((R_REG(sii->osh, &io->dmpctrl) & ~mask) | val);
+			W_REG(sii->osh, &io->dmpctrl, w);
+			NCI_INFO(("nci_core_cflags coreid.unit 0x%x.%d WREG dmpctrl "
+				"value=0x%x\n", nci->cores[sii->curidx].coreid,
+				nci->cores[sii->curidx].coreunit, w));
+
+			/* poll for the reset to happen or wait for NCI_SPINWAIT_TIMEOUT */
+			SPINWAIT_TRAP(((reg_read = R_REG(nci->osh, &io->dmpctrl)) !=
+				w), NCI_SPINWAIT_TIMEOUT);
+		}
+		reg_read = R_REG(sii->osh, &io->dmpctrl);
+	}
+
+	/* Point back to original base */
+	if (BUSTYPE(sih->bustype) == PCI_BUS) {
+		OSL_PCI_WRITE_CONFIG(nci->osh, PCI_BAR0_WIN,
+			PCI_ACCESS_SIZE, orig_bar0_win1);
+	}
 end:
 	return reg_read;
 }
@@ -2715,39 +2667,30 @@ BCMPOSTTRAPFN(nci_core_cflags_wo)(const si_t *sih, uint32 mask, uint32 val)
 		goto end;
 	}
 
-#ifdef BOOKER_NIC400_INF
-	/* If Wrapper is of NIC400, then call AI functionality */
-	if (core->desc[iface_idx].master && (core->desc[iface_idx].node_type == NODE_TYPE_NIC400)) {
-		aidmp_t *ai = sii->curwrap;
-		if (mask || val) {
-			w = ((R_REG(sii->osh, &ai->ioctrl) & ~mask) | val);
-			W_REG(sii->osh, &ai->ioctrl, w);
-		}
-	}
-#endif /* BOOKER_NIC400_INF */
-	else if (core->desc[iface_idx].oobr_core) {
+	if (core->desc[iface_idx].oobr_core) {
 		/* BOOKER */
 		/* Point to OOBR base */
 		switch (BUSTYPE(sih->bustype)) {
-		case SI_BUS:
-			io = (volatile dmp_regs_t*)
-				REG_MAP(GET_OOBR_BASE(nci->cc_erom2base), SI_CORE_SIZE);
-			break;
+			case SI_BUS:
+				io = (volatile dmp_regs_t*)
+					REG_MAP(GET_OOBR_BASE(nci->cc_erom2base), SI_CORE_SIZE);
+				break;
 
-		case PCI_BUS:
-			/* Save Original Bar0 Win1 */
-			orig_bar0_win1 =
-				OSL_PCI_READ_CONFIG(nci->osh, PCI_BAR0_WIN, PCI_ACCESS_SIZE);
+			case PCI_BUS:
+				/* Save Original Bar0 Win1 */
+				orig_bar0_win1 =
+					OSL_PCI_READ_CONFIG(nci->osh, PCI_BAR0_WIN,
+					PCI_ACCESS_SIZE);
 
-			OSL_PCI_WRITE_CONFIG(nci->osh, PCI_BAR0_WIN, PCI_ACCESS_SIZE,
-				GET_OOBR_BASE(nci->cc_erom2base));
-			io = (volatile dmp_regs_t*)sii->curmap;
-			break;
+				OSL_PCI_WRITE_CONFIG(nci->osh, PCI_BAR0_WIN, PCI_ACCESS_SIZE,
+					GET_OOBR_BASE(nci->cc_erom2base));
+				io = (volatile dmp_regs_t*)sii->curmap;
+				break;
 
-		default:
-			NCI_ERROR(("nci_core_cflags_wo Invalid bustype %d\n",
-				BUSTYPE(sih->bustype)));
-			goto end;
+			default:
+				NCI_ERROR(("nci_core_cflags_wo Invalid bustype %d\n",
+					BUSTYPE(sih->bustype)));
+				goto end;
 		}
 
 		/* Point to DMP Control */
@@ -2801,19 +2744,7 @@ nci_core_sflags(const si_t *sih, uint32 mask, uint32 val)
 		goto end;
 	}
 
-#ifdef BOOKER_NIC400_INF
-	/* If Wrapper is of NIC400, then call AI functionality */
-	if (core->desc[iface_idx].master && (core->desc[iface_idx].node_type == NODE_TYPE_NIC400)) {
-		aidmp_t *ai = sii->curwrap;
-		if (mask || val) {
-			w = ((R_REG(sii->osh, &ai->iostatus) & ~mask) | val);
-			W_REG(sii->osh, &ai->iostatus, w);
-		}
-
-		reg_read = R_REG(sii->osh, &ai->iostatus);
-	}
-#endif /* BOOKER_NIC400_INF */
-	else if (core->desc[iface_idx].oobr_core) {
+	if (core->desc[iface_idx].oobr_core) {
 		volatile dmp_regs_t *io = sii->curwrap;
 
 		/* BOOKER */

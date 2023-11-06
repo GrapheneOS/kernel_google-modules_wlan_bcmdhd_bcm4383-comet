@@ -2517,12 +2517,6 @@ wl_cfg80211_iface_state_ops(struct wireless_dev *wdev,
 					wdev->netdev->name));
 			}
 #endif /* WL_NAN */
-			if ((wl_iftype == WL_IF_TYPE_STA) || (wl_iftype == WL_IF_TYPE_AP) ||
-				(wl_iftype == WL_IF_TYPE_P2P_GO) ||
-				(wl_iftype == WL_IF_TYPE_P2P_GC)) {
-				/* restore multilink status */
-				wl_cfgvif_set_multi_link(cfg, cfg->mlo.default_multilink_val);
-			}
 			break;
 		case WL_IF_CREATE_DONE:
 			if (wl_mode == WL_MODE_BSS) {
@@ -2571,6 +2565,13 @@ wl_cfg80211_iface_state_ops(struct wireless_dev *wdev,
 			wl_cfg80211_tdls_config(cfg, TDLS_STATE_IF_DELETE, false);
 #endif /* WLTDLS */
 			wl_wlfc_enable(cfg, false);
+			if ((wl_iftype == WL_IF_TYPE_STA) || ((wl_iftype == WL_IF_TYPE_AP) &&
+				!wl_get_drv_status_all(cfg, AP_CREATED)) ||
+				(wl_iftype == WL_IF_TYPE_P2P_GO) ||
+				(wl_iftype == WL_IF_TYPE_P2P_GC)) {
+				/* restore multilink status */
+				wl_cfgvif_set_multi_link(cfg, cfg->mlo.default_multilink_val);
+			}
 			break;
 		case WL_IF_CHANGE_REQ:
 			/* Flush existing IEs from firmware on role change */
@@ -3110,6 +3111,7 @@ wl_cfg80211_notify_ifadd(struct net_device *dev,
 	bool ifadd_expected = FALSE;
 	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
 	bool bss_pending_op = TRUE;
+	bool add_in_progress = FALSE;
 
 	/* P2P may send WLC_E_IF_ADD and/or WLC_E_IF_CHANGE during IF updating ("p2p_ifupd")
 	 * redirect the IF_ADD event to ifchange as it is not a real "new" interface
@@ -3120,7 +3122,7 @@ wl_cfg80211_notify_ifadd(struct net_device *dev,
 	/* Okay, we are expecting IF_ADD (as IF_ADDING is true) */
 	if (wl_get_p2p_status(cfg, IF_ADDING)) {
 		ifadd_expected = TRUE;
-		wl_clr_p2p_status(cfg, IF_ADDING);
+		add_in_progress = TRUE;
 	} else if (cfg->bss_pending_op) {
 		ifadd_expected = TRUE;
 		bss_pending_op = FALSE;
@@ -3143,8 +3145,11 @@ wl_cfg80211_notify_ifadd(struct net_device *dev,
 		}
 		WL_INFORM_MEM(("IF_ADD ifidx:%d bssidx:%d role:%d\n",
 			ifidx, bssidx, role));
-		OSL_SMP_WMB();
 		if_event_info->valid = TRUE;
+		if (add_in_progress) {
+			wl_clr_p2p_status(cfg, IF_ADDING);
+		}
+		OSL_SMP_WMB();
 		wake_up_interruptible(&cfg->netif_change_event);
 		return BCME_OK;
 	}
@@ -3159,10 +3164,11 @@ wl_cfg80211_notify_ifdel(struct net_device *dev, int ifidx, char *name, uint8 *m
 	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
 	wl_if_event_info *if_event_info = &cfg->if_event_info;
 	bool bss_pending_op = TRUE;
+	bool del_in_progress = FALSE;
 
 	if (wl_get_p2p_status(cfg, IF_DELETING)) {
 		ifdel_expected = TRUE;
-		wl_clr_p2p_status(cfg, IF_DELETING);
+		del_in_progress = TRUE;
 	} else if (cfg->bss_pending_op) {
 		ifdel_expected = TRUE;
 		bss_pending_op = FALSE;
@@ -3176,8 +3182,11 @@ wl_cfg80211_notify_ifdel(struct net_device *dev, int ifidx, char *name, uint8 *m
 			cfg->bss_pending_op = FALSE;
 		}
 		WL_INFORM_MEM(("IF_DEL ifidx:%d bssidx:%d\n", ifidx, bssidx));
-		OSL_SMP_WMB();
 		if_event_info->valid = TRUE;
+		if (del_in_progress) {
+			wl_clr_p2p_status(cfg, IF_DELETING);
+		}
+		OSL_SMP_WMB();
 		wake_up_interruptible(&cfg->netif_change_event);
 		return BCME_OK;
 	}
@@ -7284,10 +7293,12 @@ wl_fillup_assoc_params(struct bcm_cfg80211 *cfg, struct net_device *dev,
 	s32 home_time = 0;
 	u8 scan_type = 0;
 	u8 *bssid_ptr = NULL;
+	u8 *mld_ptr = NULL;
 	s32 nprobes;
 	wl_extjoin_params_t *ext_join_params = (wl_extjoin_params_t *)params;
 	wl_extjoin_params_v1_t *ext_join_params_v1 = (wl_extjoin_params_v1_t *)params;
 	wl_extjoin_params_v2_t *ext_join_params_v2 = (wl_extjoin_params_v2_t *)params;
+	wl_extjoin_params_v3_t *ext_join_params_v3 = (wl_extjoin_params_v3_t *)params;
 	s32 rem_buf = buf_len;
 
 	/* Use increased dwell for targeted join case to take care of noisy env */
@@ -7307,7 +7318,6 @@ wl_fillup_assoc_params(struct bcm_cfg80211 *cfg, struct net_device *dev,
 	WL_DBG(("active_time:%d nprobes:%d\n", join_scan_active_time,
 		ext_join_params->scan.nprobes));
 
-	ext_join_params->assoc.chanspec_num = htod32(chan_cnt);
 	switch (cfg->join_iovar_ver) {
 		case WL_JOIN_VERSION_MAJOR_0:
 			ext_join_params = (wl_extjoin_params_t *)params;
@@ -7321,9 +7331,11 @@ wl_fillup_assoc_params(struct bcm_cfg80211 *cfg, struct net_device *dev,
 			break;
 		case WL_JOIN_VERSION_MAJOR_1:
 			ext_join_params_v1 = (wl_extjoin_params_v1_t *)params;
+			ext_join_params_v1->version = WL_JOIN_VERSION_MAJOR_1;
 			ssid_ptr = &ext_join_params_v1->ssid;
 			assoc_flags = &ext_join_params_v1->assoc.flags;
 			ext_join_params_v1->assoc.chanspec_num = htod32(chan_cnt);
+			ext_join_params_v1->assoc.version = WL_JOIN_VERSION_MAJOR_1;
 			chspec_list_ptr = ext_join_params_v1->assoc.chanspec_list;
 			SET_SCAN_PARAMS(ext_join_params_v1, active_time,
 					passive_time, scan_type, home_time, nprobes);
@@ -7332,14 +7344,30 @@ wl_fillup_assoc_params(struct bcm_cfg80211 *cfg, struct net_device *dev,
 			break;
 		case WL_JOIN_VERSION_MAJOR_2:
 			ext_join_params_v2 = (wl_extjoin_params_v2_t *)params;
+			ext_join_params_v2->version = WL_JOIN_VERSION_MAJOR_2;
 			ssid_ptr = &ext_join_params_v2->ssid;
 			assoc_flags = &ext_join_params_v2->assoc.flags;
 			ext_join_params_v2->assoc.chanspec_num = htod32(chan_cnt);
+			ext_join_params_v2->assoc.version = WL_JOIN_VERSION_MAJOR_2;
 			chspec_list_ptr = ext_join_params_v2->assoc.chanspec_list;
 			SET_SCAN_PARAMS(ext_join_params_v2, active_time,
 					passive_time, scan_type, home_time, nprobes);
 			bssid_ptr = ext_join_params_v2->assoc.bssid.octet;
 			rem_buf -= WL_EXTJOIN_PARAMS_FIXED_SIZE_V2;
+			break;
+		case WL_JOIN_VERSION_MAJOR_3:
+			ext_join_params_v3 = (wl_extjoin_params_v3_t *)params;
+			ext_join_params_v3->version = WL_JOIN_VERSION_MAJOR_3;
+			ssid_ptr = &ext_join_params_v3->ssid;
+			assoc_flags = &ext_join_params_v3->assoc.flags;
+			ext_join_params_v3->assoc.version = WL_JOIN_VERSION_MAJOR_3;
+			ext_join_params_v3->assoc.chanspec_num = htod32(chan_cnt);
+			chspec_list_ptr = ext_join_params_v3->assoc.chanspec_list;
+			SET_SCAN_PARAMS(ext_join_params_v3, active_time,
+					passive_time, scan_type, home_time, nprobes);
+			bssid_ptr = ext_join_params_v3->assoc.bssid.octet;
+			mld_ptr = ext_join_params_v3->assoc.mld_addr.octet;
+			rem_buf -= WL_EXTJOIN_PARAMS_FIXED_SIZE_V3;
 			break;
 
 		default:
@@ -7374,6 +7402,10 @@ wl_fillup_assoc_params(struct bcm_cfg80211 *cfg, struct net_device *dev,
 
 	if (bssid_ptr) {
 		eacopy(info->bssid, bssid_ptr);
+	}
+
+	if (mld_ptr) {
+		eacopy(info->mld, mld_ptr);
 	}
 
 	return BCME_OK;
@@ -7695,6 +7727,10 @@ wl_handle_join(struct bcm_cfg80211 *cfg,
 		/* Use version 2 join struct */
 		join_params_size = WL_EXTJOIN_PARAMS_FIXED_SIZE_V2 +
 			assoc_info->chan_cnt * sizeof(chanspec_t);
+	} else if (cfg->join_iovar_ver == WL_JOIN_VERSION_MAJOR_3) {
+		/* Use version 3 join struct */
+		join_params_size = WL_EXTJOIN_PARAMS_FIXED_SIZE_V3 +
+			assoc_info->chan_cnt * sizeof(chanspec_t);
 	} else {
 		WL_ERR(("Unsupported join iovar version %d\n", cfg->join_iovar_ver));
 		return -EINVAL;
@@ -7721,7 +7757,8 @@ wl_handle_join(struct bcm_cfg80211 *cfg,
 	err = wldev_iovar_setbuf_bsscfg(dev, "join", join_params, join_params_size,
 		cfg->ioctl_buf, WLC_IOCTL_MAXLEN, assoc_info->bssidx, &cfg->ioctl_buf_sync);
 	if (err) {
-		WL_ERR(("join iovar failed. err:%d\n", err));
+		WL_ERR(("join iovar failed. err:%d join_ver:%d\n", err,
+				cfg->join_iovar_ver));
 	}
 
 fail:
@@ -7905,10 +7942,13 @@ static void wl_cfg80211_wait_for_disconnection(struct bcm_cfg80211 *cfg, struct 
 			CFG80211_CONNECT_RESULT(dev, NULL, NULL, NULL, 0, NULL, 0,
 				WLAN_STATUS_UNSPECIFIED_FAILURE,
 				GFP_KERNEL);
+			wl_clr_drv_status(cfg, CONNECTING, dev);
 		} else {
 			WL_INFORM_MEM(("force send disconnect event\n"));
+			/* clear connected status and report disconnected event */
+			wl_clr_drv_status(cfg, CONNECTED, dev);
 			CFG80211_DISCONNECTED(dev, WLAN_REASON_DEAUTH_LEAVING,
-				NULL, 0, false, GFP_KERNEL);
+				NULL, 0, TRUE, GFP_KERNEL);
 		}
 		CLR_TS(cfg, conn_start);
 		CLR_TS(cfg, authorize_start);
@@ -8008,9 +8048,6 @@ wl_cfg80211_disconnect(struct wiphy *wiphy, struct net_device *dev,
 				 in all exit paths
 				 */
 				wl_set_drv_status(cfg, DISCONNECTING, dev);
-				/* clear connecting state */
-				wl_clr_drv_status(cfg, CONNECTING, dev);
-
 #ifdef WL_CFGVENDOR_CUST_ADVLOG
 				/* get rssi before sending DISASSOC to avoid getting zero */
 				bzero(&scb_rssi, sizeof(scb_val_t));
@@ -24863,7 +24900,8 @@ wl_cfg80211_sup_event_handler(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgde
 			BRCM_VENDOR_EVENT_PORT_AUTHORIZED, NULL, 0);
 #endif /* LINUX_VERSION_CODE > KERNEL_VERSION(3, 14, 0) || WL_VENDOR_EXT_SUPPORT */
 		WL_INFORM_MEM(("4way HS finished. port authorized event sent\n"));
-		/* update conn status */
+		/* Post SCB authorize actions */
+		wl_cfg80211_post_scb_auth(cfg, ndev);
 		assoc_status = WL_PROF_ASSOC_SUCCESS;
 	} else if ((status == WLC_SUP_KEYED) && (reason == WLC_E_SUP_DEAUTH)) {
 		/* In case of priority roam, ignore the deauth, if roam fails link down
@@ -27116,62 +27154,126 @@ wl_cfg80211_get_sta_chanspec(struct bcm_cfg80211 *cfg)
 	return 0;
 }
 
+s32
+wl_get_reassoc_param_len(struct bcm_cfg80211 *cfg, wlcfg_assoc_info_t *info, u32 *params_size)
+{
+	s32 ret = BCME_OK;
+	u32 chanspec_size;
+
+	if (!params_size || !info) {
+		return BCME_ERROR;
+	}
+
+	chanspec_size = sizeof(chanspec_t) * info->chan_cnt;
+	switch (cfg->join_iovar_ver) {
+		case WL_JOIN_VERSION_MAJOR_0:
+			*params_size = WL_REASSOC_PARAMS_FIXED_SIZE + chanspec_size;
+			break;
+		case WL_JOIN_VERSION_MAJOR_1:
+			/* intentional fall through */
+		case WL_JOIN_VERSION_MAJOR_2:
+			*params_size = WL_REASSOC_PARAMS_FIXED_SIZE_V1 + chanspec_size;
+			break;
+		case WL_JOIN_VERSION_MAJOR_3:
+			*params_size = WL_REASSOC_PARAMS_FIXED_SIZE_V3 + chanspec_size;
+			break;
+		default:
+			WL_ERR(("unknown version:%d\n", cfg->join_iovar_ver));
+			ret = BCME_ERROR;
+	}
+	return ret;
+}
+
 int
-wl_cfg80211_reassoc(struct net_device *dev, struct ether_addr *bssid, chanspec_t chanspec)
+wl_cfg80211_reassoc(struct net_device *dev, wlcfg_assoc_info_t *info)
 {
 	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
 	int error = BCME_OK;
 	u32 params_size;
+	void *params = NULL;
+	u8 *bssid_ptr = NULL;
+	u8 *mld_ptr = NULL;
+	chanspec_t *chspec_ptr = NULL;
+	wl_reassoc_params_t *params_v0;
+	wl_reassoc_params_v1_t *params_v1;
+	wl_reassoc_params_v3_t *params_v3;
+	u32 chanspec_size = info->chan_cnt * sizeof(chanspec_t);
 
-	void *iovar_params;
-	wl_reassoc_params_t *reassoc_params_info;
-	wl_reassoc_params_t reassoc_params_v0;
-	wl_reassoc_params_cvt_v1_t reassoc_params_v1;
-	wl_ext_reassoc_params_cvt_v1_t reassoc_params_v2;
+	if (wl_get_reassoc_param_len(cfg, info, &params_size) != BCME_OK) {
+		WL_ERR(("wrong iovar len\n"));
+		return BCME_ERROR;
+	}
+
+	params = MALLOCZ(cfg->osh, params_size);
+	if (params == NULL) {
+		error = -ENOMEM;
+		WL_ERR(("Mem alloc for join_params failed\n"));
+		goto exit;
+	}
 
 	switch (cfg->join_iovar_ver) {
-		case WL_REASSOC_VERSION_V0 :
+		case WL_JOIN_VERSION_MAJOR_0:
 			/* wl_reassoc_params */
-			params_size = WL_REASSOC_PARAMS_FIXED_SIZE + sizeof(chanspec_t);
-			iovar_params = &reassoc_params_v0;
-			reassoc_params_info = &reassoc_params_v0;
+			params_v0 = (wl_reassoc_params_t *)params;
+			params_v0->chanspec_num = htod32(info->chan_cnt);
+			chspec_ptr = params_v0->chanspec_list;
+			bssid_ptr = params_v0->bssid.octet;
 			break;
-		case WL_REASSOC_VERSION_V1 :
-			/* wl_reassoc_params_v1 */
-			params_size = WL_REASSOC_PARAMS_FIXED_SIZE_V1 + sizeof(chanspec_t);
-			iovar_params = &reassoc_params_v1;
-				reassoc_params_v1.version = WL_REASSOC_VERSION_V1;
-			reassoc_params_v1.flags = WL_SCAN_MODE_HIGH_ACC;
-			reassoc_params_info = &reassoc_params_v1.params;
+		case WL_JOIN_VERSION_MAJOR_1:
+			/* intentional fall through */
+		case WL_JOIN_VERSION_MAJOR_2:
+			 /* Intentionally mapping to version 1 as there is no v2 specific
+			  * handling for reassoc.
+			  */
+			params_v1 = (wl_reassoc_params_v1_t *)params;
+			params_v1->version = WL_JOIN_VERSION_MAJOR_1;
+			params_v1->flags = WL_SCAN_MODE_HIGH_ACC;
+			params_v1->chanspec_num = htod32(info->chan_cnt);
+			chspec_ptr = params_v1->chanspec_list;
+			bssid_ptr = params_v1->bssid.octet;
 			break;
-		case WL_REASSOC_VERSION_V2 :
+		case WL_JOIN_VERSION_MAJOR_3:
 			/* wl_ext_reassoc_params */
-			params_size = WL_EXTREASSOC_PARAMS_FIXED_SIZE_V1 + sizeof(chanspec_t);
-			iovar_params = &reassoc_params_v2;
-			reassoc_params_v2.version = WL_REASSOC_VERSION_V2;
-			reassoc_params_v2.length = params_size;
-			reassoc_params_v2.flags = WL_SCAN_MODE_HIGH_ACC;
-			reassoc_params_v2.params.version = WL_REASSOC_VERSION_V2;
-			reassoc_params_v2.params.flags = WL_SCAN_MODE_HIGH_ACC;
-			reassoc_params_info = &reassoc_params_v2.params.params;
+			params_v3 = (wl_reassoc_params_v3_t *)params;
+			params_v3->version = WL_JOIN_VERSION_MAJOR_3;
+			params_v3->flags = WL_SCAN_MODE_HIGH_ACC;
+			params_v3->chanspec_num = htod32(info->chan_cnt);
+			chspec_ptr = params_v3->chanspec_list;
+			bssid_ptr = params_v3->bssid.octet;
+			mld_ptr = params_v3->mld_addr.octet;
 			break;
 		default :
 			error = BCME_VERSION;
 			goto exit;
 	}
 
-	bzero(reassoc_params_info, WL_REASSOC_PARAMS_FIXED_SIZE);
-	bcopy(bssid, (void *)&reassoc_params_info->bssid, ETHER_ADDR_LEN);
+	if (bssid_ptr) {
+		eacopy(info->bssid, bssid_ptr);
+	}
 
-	reassoc_params_info->chanspec_num = 1;
-	reassoc_params_info->chanspec_list[0] = chanspec;
+	if (mld_ptr) {
+		eacopy(info->mld, mld_ptr);
+	}
 
-	error = wldev_ioctl_set(dev, WLC_REASSOC, iovar_params, params_size);
+	if (info->chan_cnt && chspec_ptr &&
+			memcpy_s(chspec_ptr, chanspec_size, info->chanspecs,
+			(info->chan_cnt * sizeof(chanspec_t)))) {
+		WL_ERR(("channel list copy failed. chan_cnt:%d\n", info->chan_cnt));
+		error = BCME_ERROR;
+		goto exit;
+	}
+
+	error = wldev_ioctl_set(dev, WLC_REASSOC, params, params_size);
 	if (error) {
-		WL_ERR(("failed to reassoc, error=%d\n", error));
+		WL_ERR(("failed to reassoc, error=%d iovar_ver:%d size:%d\n",
+			error, cfg->join_iovar_ver, params_size));
 	}
 
 exit:
+
+	if (params) {
+		MFREE(cfg->osh, params, params_size);
+	}
 	return error;
 }
 

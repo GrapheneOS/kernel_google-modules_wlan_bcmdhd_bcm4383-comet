@@ -1913,6 +1913,7 @@ wl_get_overlapping_chspecs(chanspec_t sel_chspec,
 	int i, j;
 	u8 max_idx = *arr_idx;
 	u8 chan_idx = 0;
+	u8 max_num_chans = 0;
 	u32 band;
 	chanspec_t chspec;
 	u32 chaninfo;
@@ -1931,13 +1932,17 @@ wl_get_overlapping_chspecs(chanspec_t sel_chspec,
 	for (i = 0; i < max_idx; i++) {
 		chspec = overlap[i].chanspec;
 		chaninfo = overlap[i].chaninfo;
+		max_num_chans =
+			MIN(wl_cfgscan_get_max_num_chans_per_bw(chspec),
+				MAX_20MHZ_CHANNELS);
+
 		if (band != CHSPEC_BAND(chspec)) {
 			continue;
 		}
-		for (j = 0; j < MAX_20MHZ_CHANNELS; j++) {
+		for (j = 0; j < max_num_chans; j++) {
 			if (!chan_array[j]) {
-				/* if list is empty, break */
-				break;
+				/* if list entry is empty, continue to look further */
+				continue;
 			}
 			if (chan_array[j] == CHSPEC_CHANNEL(chspec)) {
 				new_arr[chan_idx].chanspec = chspec;
@@ -1980,6 +1985,7 @@ wl_filter_restricted_subbands(struct bcm_cfg80211 *cfg,
 	s32 err = BCME_OK;
 	u32 tot_size = 0;
 	u32 band;
+	u8 max_num_chans = 0;
 
 	chan_list = (wl_chanspec_list_v1_t *)MALLOCZ(cfg->osh, CHANINFO_LIST_BUF_SIZE);
 	if (chan_list == NULL) {
@@ -2029,16 +2035,19 @@ wl_filter_restricted_subbands(struct bcm_cfg80211 *cfg,
 	band = CHSPEC_BAND(sel_chspec);
 	wf_get_all_ext(sel_chspec, chan_array);
 	bzero(overlap, sizeof(overlap));
-	 for (i = 0; i < dtoh32(list_count); i++) {
-		 chspec = dtoh32(chan_list->chspecs[i].chanspec);
-		 chaninfo = dtoh32(chan_list->chspecs[i].chaninfo);
+	for (i = 0; i < dtoh32(list_count); i++) {
+		chspec = dtoh32(chan_list->chspecs[i].chanspec);
+		chaninfo = dtoh32(chan_list->chspecs[i].chaninfo);
+		max_num_chans =
+			MIN(wl_cfgscan_get_max_num_chans_per_bw(chspec),
+				MAX_20MHZ_CHANNELS);
 
 		/* get overlapping chanspec, chaninfo details based on current chanspec */
 		if ((CHSPEC_BAND(chspec) == band) && (CHSPEC_BW(chspec) == WL_CHANSPEC_BW_20)) {
-			for (j = 0; j < MAX_20MHZ_CHANNELS; j++) {
+			for (j = 0; j < max_num_chans; j++) {
 				if (!chan_array[j]) {
-					/* if entry is empty, break */
-					break;
+					/* if entry is empty, look further */
+					continue;
 				}
 				if (chan_array[j] == CHSPEC_CHANNEL(chspec)) {
 					overlap[arr_idx].chanspec = chspec;
@@ -3791,8 +3800,10 @@ wl_cfg80211_bcn_bringup_ap(
 	s32 err = BCME_OK;
 	s32 is_rsdb_supported = BCME_ERROR;
 	u8 buf[WLC_IOCTL_SMLEN] = {0};
+#ifdef DYN_RSDB_ROAM_DISABLE
 	dhd_pub_t *dhd = (dhd_pub_t *)(cfg->pub);
 	bool dyn_rsdb = FW_SUPPORTED(dhd, sdb_modesw);
+#endif /* DYN_RSDB_ROAM_DISABLE */
 
 #if defined (BCMDONGLEHOST)
 	is_rsdb_supported = DHD_OPMODE_SUPPORTED(cfg->pub, DHD_FLAG_RSDB_MODE);
@@ -3864,9 +3875,11 @@ wl_cfg80211_bcn_bringup_ap(
 			WL_DBG(("Bss is already up\n"));
 	} else if (dev_role == NL80211_IFTYPE_AP) {
 
+#ifdef DYN_RSDB_ROAM_DISABLE
 		if (dyn_rsdb) {
 			wl_cfgvif_roam_config(cfg, dev, ROAM_CONF_AP_ENABLE);
 		}
+#endif /* DYN_RSDB_ROAM_DISABLE */
 
 		if (!wl_get_drv_status(cfg, AP_CREATING, dev)) {
 			/* Make sure fw is in proper state */
@@ -4059,9 +4072,11 @@ exit:
 		}
 		wl_clr_drv_status(cfg, AP_BSS_UP_IN_PROG, dev);
 
+#ifdef DYN_RSDB_ROAM_DISABLE
 		if ((dev_role == NL80211_IFTYPE_AP) && dyn_rsdb) {
 			wl_cfgvif_roam_config(cfg, dev, ROAM_CONF_AP_DISABLE);
 		}
+#endif /* DYN_RSDB_ROAM_DISABLE */
 	}
 	return err;
 }
@@ -4946,7 +4961,9 @@ wl_cfg80211_stop_ap(
 #endif /* DHD_PCIE_RUNTIMEPM */
 #endif /* CUSTOMER_HW4 */
 	u8 null_mac[ETH_ALEN];
+#ifdef DYN_RSDB_ROAM_DISABLE
 	bool dyn_rsdb = FW_SUPPORTED(dhd, sdb_modesw);
+#endif /* DYN_RSDB_ROAM_DISABLE */
 
 	WL_DBG(("Enter \n"));
 
@@ -5018,9 +5035,12 @@ wl_cfg80211_stop_ap(
 		WL_ERR(("bss down error %d\n", err));
 	}
 
+#ifdef DYN_RSDB_ROAM_DISABLE
 	if (dyn_rsdb) {
 		wl_cfgvif_roam_config(cfg, dev, ROAM_CONF_AP_DISABLE);
 	}
+#endif /* DYN_RSDB_ROAM_DISABLE */
+
 #if defined(WL_MLO) && defined(WL_MLO_AP)
 	if (cfg->mlo.supported && mlo_ap_enable) {
 		if ((err = wl_stop_mlo_ap(cfg, dev)) != BCME_OK) {
@@ -7687,6 +7707,13 @@ wl_cfg80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 		cfg->ioctl_buf, WLC_IOCTL_SMLEN, &cfg->ioctl_buf_sync);
 	if (err < 0) {
 		WL_ERR(("Failed to switch channel, err=%d\n", err));
+		if (err == BCME_NOTUP) {
+			/* Map NOTUP(-4) error to NOTREADY(-25) , -4 is causing
+			 * hang in kernel/libl layer.. GG bug:297840833
+			 */
+			WL_ERR(("Mapping error code -4 to -25\n"));
+			err = BCME_NOTREADY;
+		}
 	}
 
 	return err;
@@ -8348,6 +8375,7 @@ wl_cfgvif_roam_config(struct bcm_cfg80211 *cfg, struct net_device *dev,
 	if (cfg->stas_associated == 1) {
 		struct net_info *iter, *next;
 		GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
+		/* For single STA connected case, treat it as primary STA */
 		for_each_ndev(cfg, iter, next) {
 			GCC_DIAGNOSTIC_POP();
 			if (iter->ndev && (iter->iftype == WL_IF_TYPE_STA) &&
@@ -8365,6 +8393,11 @@ wl_cfgvif_roam_config(struct bcm_cfg80211 *cfg, struct net_device *dev,
 			return;
 		}
 		primary_sta = cfg->inet_ndev;
+	}
+
+	if (!primary_sta) {
+		/* In non associated case, use default interface */
+		primary_sta = bcmcfg_to_prmry_ndev(cfg);
 	}
 
 	/* check states for whether to attempt or disable roam */
@@ -9285,6 +9318,7 @@ wl_cfgvif_is_scc_valid(chanspec_t sta_chanspec, chanspec_t chspec, wl_chan_info_
 	u8 *chan_array;
 	s32 i;
 	u32 sta_band;
+	u8 max_num_chans = 0;
 
 	if (!wl_chaninfo) {
 		WL_ERR(("chaninfo detail null\n"));
@@ -9299,11 +9333,15 @@ wl_cfgvif_is_scc_valid(chanspec_t sta_chanspec, chanspec_t chspec, wl_chan_info_
 	}
 
 	sta_band = CHSPEC_TO_WLC_BAND(CHSPEC_BAND(sta_chanspec));
+	max_num_chans =
+		MIN(wl_cfgscan_get_max_num_chans_per_bw(sta_chanspec),
+			MAX_20MHZ_CHANNELS);
+
 	/* if channel is overlapping for the incoming chanspec */
-	for (i = 0; i < MAX_20MHZ_CHANNELS; i++) {
+	for (i = 0; i < max_num_chans; i++) {
 
 		if (!chan_array[i]) {
-			break;
+			continue;
 		}
 
 		if (chan_array[i] == wf_chspec_ctlchan(chspec)) {
