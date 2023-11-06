@@ -1930,12 +1930,11 @@ wl_get_overlapping_chspecs(chanspec_t sel_chspec,
 	bzero(new_arr, sizeof(new_arr));
 	band = CHSPEC_BAND(sel_chspec);
 	wf_get_all_ext(sel_chspec, chan_array);
+	max_num_chans = MIN(wl_cfgscan_get_max_num_chans_per_bw(sel_chspec),
+		MAX_20MHZ_CHANNELS);
 	for (i = 0; i < max_idx; i++) {
 		chspec = overlap[i].chanspec;
 		chaninfo = overlap[i].chaninfo;
-		max_num_chans =
-			MIN(wl_cfgscan_get_max_num_chans_per_bw(chspec),
-				MAX_20MHZ_CHANNELS);
 
 		if (band != CHSPEC_BAND(chspec)) {
 			continue;
@@ -2035,13 +2034,12 @@ wl_filter_restricted_subbands(struct bcm_cfg80211 *cfg,
 
 	band = CHSPEC_BAND(sel_chspec);
 	wf_get_all_ext(sel_chspec, chan_array);
+	max_num_chans = MIN(wl_cfgscan_get_max_num_chans_per_bw(sel_chspec),
+		MAX_20MHZ_CHANNELS);
 	bzero(overlap, sizeof(overlap));
 	for (i = 0; i < dtoh32(list_count); i++) {
 		chspec = dtoh32(chan_list->chspecs[i].chanspec);
 		chaninfo = dtoh32(chan_list->chspecs[i].chaninfo);
-		max_num_chans =
-			MIN(wl_cfgscan_get_max_num_chans_per_bw(chspec),
-				MAX_20MHZ_CHANNELS);
 
 		/* get overlapping chanspec, chaninfo details based on current chanspec */
 		if ((CHSPEC_BAND(chspec) == band) && (CHSPEC_BW(chspec) == WL_CHANSPEC_BW_20)) {
@@ -2068,6 +2066,8 @@ wl_filter_restricted_subbands(struct bcm_cfg80211 *cfg,
 			sel_chspec, bw, arr_idx));
 		 for (k = 0; k < arr_idx; k++) {
 			retry_bw = FALSE;
+			WL_DBG(("chanspec:0x%x chaninfo:%d index:%d\n",
+				overlap[k].chanspec, overlap[k].chaninfo, k));
 			if (wl_cfgscan_chaninfo_restricted(cfg, dev, overlap[k].chaninfo,
 					overlap[k].chanspec)) {
 				if ((bw == WL_CHANSPEC_BW_80) || (bw == WL_CHANSPEC_BW_40) ||
