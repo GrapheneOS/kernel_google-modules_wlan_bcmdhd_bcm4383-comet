@@ -8407,7 +8407,9 @@ static int wl_update_ml_link_stat(struct bcm_cfg80211 *cfg, struct net_device *i
 		COMPAT_ASSIGN_VALUE(iface, peer_info->bssload.sta_count, bssload->sta_count);
 		COMPAT_ASSIGN_VALUE(iface, peer_info->bssload.chan_util, bssload->chan_util);
 	} else if (err == BCME_UNSUPPORTED) {
+		/* err return causes wifi turn off in android. print err and exit gracefully */
 		WL_ERR(("bssload_report is unsupported \n"));
+		err = BCME_OK;
 	} else if (err == BCME_NOTASSOCIATED) {
 		WL_ERR(("bssload_report IOVAR failed. STA is not associated.\n"));
 	} else {

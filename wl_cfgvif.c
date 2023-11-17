@@ -2184,10 +2184,10 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 				return -EINVAL;
 			}
 		} else {
-			chanspec_t sta_chanspec;
+			chanspec_t sta_chanspec = INVCHANSPEC;
 			s32 sta_ieee_band;
 			if (ap_oper_data.count == 1) {
-				chanspec_t sta_chspec;
+				chanspec_t sta_chspec = INVCHANSPEC;
 				u16 incoming_band;
 
 				incoming_band = CHSPEC_TO_WLC_BAND(chspec);
@@ -2213,6 +2213,10 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 			}
 
 			sta_chanspec = wl_cfg80211_get_sta_chanspec(cfg);
+			if (!sta_chanspec || !wf_chspec_valid(sta_chanspec)) {
+				WL_ERR(("Invalid chanspec 0x%x\n", sta_chanspec));
+				return -EINVAL;
+			}
 			sta_ieee_band = wl_get_nl80211_band(CHSPEC_BAND(sta_chanspec));
 
 			if (chan->band == sta_ieee_band ||
