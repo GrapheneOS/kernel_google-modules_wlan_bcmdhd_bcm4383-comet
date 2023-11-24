@@ -273,6 +273,7 @@ static int dhd_rtt_ac_az_ftm_config(dhd_pub_t *dhd, wl_proxd_session_id_t sessio
 #ifdef WL_NAN
 static void dhd_rtt_trigger_pending_targets_on_session_end(dhd_pub_t *dhd);
 #endif /* WL_NAN */
+static int dhd_rtt_stop_ranging(dhd_pub_t *dhd);
 #endif /* WL_CFG80211 */
 static const int burst_duration_idx[]  = {0, 0, 1, 2, 4, 8, 16, 32, 64, 128, 0, 0};
 
@@ -2964,7 +2965,7 @@ dhd_rtt_stop(dhd_pub_t *dhd, struct ether_addr *mac_list, int mac_cnt)
 			dhd_rtt_delete_session(dhd,
 				rtt_status->rtt_config.target_info[i].sid);
 		}
-		DHD_RTT(("current RTT process is cancelled\n"));
+		DHD_RTT_ERR(("current RTT process is cancelled\n"));
 		/* remove the rtt results in cache */
 		if (!list_empty(&rtt_status->rtt_results_cache)) {
 			/* Iterate rtt_results_header list */
@@ -3000,6 +3001,7 @@ dhd_rtt_stop(dhd_pub_t *dhd, struct ether_addr *mac_list, int mac_cnt)
 		if (delayed_work_pending(&rtt_status->proxd_timeout)) {
 			dhd_cancel_delayed_work(&rtt_status->proxd_timeout);
 		}
+		dhd_rtt_stop_ranging(dhd);
 		dhd_rtt_delete_session(dhd, FTM_DEFAULT_SESSION);
 #ifdef WL_NAN
 		dhd_rtt_delete_nan_session(dhd);
