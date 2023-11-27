@@ -3977,6 +3977,16 @@ dhd_bus_download_firmware(struct dhd_bus *bus, osl_t *osh,
 	bus->fw_path = pfw_path;
 	bus->nv_path = pnv_path;
 
+#ifdef DHD_NOT_SUPPORT_4383_REV_A0
+	/* 4383 a0 chiprev is 0 */
+	if (si_chipid(bus->sih) == BCM4383_CHIP_ID &&
+		(bus->sih->chiprev == 0)) {
+		DHD_ERROR(("%s: Not supported 4383 a0 chip rev\n", __FUNCTION__));
+		/* intentionally returns NORESOURCE to avoid calling force memdump */
+		return BCME_NORESOURCE;
+	}
+#endif /* DHD_NOT_SUPPORT_4383_REV_A0 */
+
 #if defined(SUPPORT_MULTIPLE_REVISION)
 	dhd_reset_clm_map_txcap_path();
 	if (concate_revision(bus, bus->fw_path, bus->nv_path) != 0) {
