@@ -7216,7 +7216,7 @@ dhd_open(struct net_device *net)
 		dhd_irq_set_affinity(&dhd->pub, cpumask_of(0));
 #endif /* DHD_CONTROL_PCIE_CPUCORE_WIFI_TURNON */
 #if defined(BCMPCIE) && defined(DHDTCPACK_SUPPRESS)
-		dhd_tcpack_suppress_set(&dhd->pub, TCPACK_SUP_HOLD);
+		dhd_tcpack_suppress_set(&dhd->pub, TCPACK_SUP_OFF);
 #endif /* BCMPCIE && DHDTCPACK_SUPPRESS */
 #if defined(NUM_SCB_MAX_PROBE)
 		dhd_set_scb_probe(&dhd->pub);
