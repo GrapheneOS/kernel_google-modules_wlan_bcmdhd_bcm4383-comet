@@ -763,7 +763,7 @@ do {									\
 #define WL_SCAN_TIMER_INTERVAL_MS	10000 /* Scan timeout */
 
 /* For devices in non-rsdb mode , need to add 2G scan time also */
-#define WL_SCAN_TIMER_INTERVAL_MS_NON_RSDB	7000u
+#define WL_SCAN_TIMER_INTERVAL_MS_NON_RSDB	10000u
 #define WL_RSDB_MODE_MIMO	0
 #define WL_RSDB_MODE_RSDB	1u
 

@@ -3782,7 +3782,7 @@ wl_cfg80211_ap_timeout_work(struct work_struct *work)
 }
 
 /* In RSDB downgrade cases, the link up event can get delayed upto 7-8 secs */
-#define MAX_AP_LINK_WAIT_TIME   10000
+#define MAX_AP_LINK_WAIT_TIME   15000
 static s32
 wl_cfg80211_bcn_bringup_ap(
 	struct net_device *dev,
