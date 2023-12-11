@@ -5674,6 +5674,11 @@ wbrc2wl_wlan_on_request(void *dhd_pub)
 		return BCME_NOTFOUND;
 	}
 
+	if (dhd_get_reboot_status(dhdp) >= 0 || dhd_get_module_exit_status(dhdp) > 0) {
+		DHD_PRINT(("%s: reboot or exit in progress\n", __FUNCTION__));
+		return BCME_BUSY;
+	}
+
 	dhd_net_if_lock(dev);
 	if (!g_wifi_on) {
 		dhd_net_wifi_platform_set_power(dev, TRUE, WIFI_TURNON_DELAY);
