@@ -6151,8 +6151,8 @@ wl_cfg80211_get_mld_netinfo_by_cfg(struct bcm_cfg80211 *cfg, u8 *ml_conn_count)
 
 	*ml_conn_count = conn_count;
 	if (conn_count > 1) {
-		/* This API is expeced to be used only in single STA use case */
-		WL_INFORM(("muli ML links available\n"));
+		/* This API is expected to be used only in single STA use case */
+		WL_INFORM(("multi ML links available\n"));
 		return NULL;
 	}
 

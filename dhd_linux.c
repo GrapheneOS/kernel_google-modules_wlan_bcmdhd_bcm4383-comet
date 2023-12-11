@@ -5295,18 +5295,50 @@ dhd_80211_mon_pkt(dhd_pub_t *dhdp, host_rxbuf_cmpl_t* msg, void *pkt, int ifidx)
 	/* Distinguish rx/tx frame */
 	wl_aml_header_v1_t hdr;
 	bool wpa_sup;
+	struct sk_buff *skb = pkt;
 	frame_type type;
+#ifdef DHD_PKT_LOGGING
+	struct ether_header *eh;
+	uint32 pktid;
+	uint16 ether_type;
+	uint16 status;
+#endif /* DHD_PKT_LOGGING */
 
-	hdr = *(wl_aml_header_v1_t *)PKTDATA(dhdp->osh, pkt);
-	PKTPULL(dhdp->osh, pkt, sizeof(hdr));
+	hdr = *(wl_aml_header_v1_t *)PKTDATA(dhdp->osh, skb);
+	PKTPULL(dhdp->osh, skb, sizeof(hdr));
 	wpa_sup = !!(hdr.flags & WL_AML_F_EAPOL);
 	type = wpa_sup ? FRAME_TYPE_ETHERNET_II : FRAME_TYPE_80211_MGMT;
 
 	if (hdr.flags & WL_AML_F_DIRECTION) {
 		bool ack = !!(hdr.flags & WL_AML_F_ACKED);
-		DHD_DBG_PKT_MON_TX(dhdp, pkt, 0, type, (uint8)ack, TRUE);
+#ifdef DHD_PKT_LOGGING
+		/* Send Tx-ed 4HS packet in dongle to packet logging buffer */
+		if (skb && type == FRAME_TYPE_ETHERNET_II) {
+			pktid = (uint32)(unsigned long)pkt;
+			status = (ack) ? WLFC_CTL_PKTFLAG_DISCARD : WLFC_CTL_PKTFLAG_DISCARD_NOACK;
+			DHD_PKTLOG_TX(dhdp, skb, skb->data, pktid);
+			DHD_PKTLOG_TXS(dhdp, skb, skb->data, pktid, status);
+		}
+#endif /* DHD_PKT_LOGGING */
+
+		/* Send Tx-ed mgmt frame and 4HS packet in dongle to upper layer */
+		DHD_DBG_PKT_MON_TX(dhdp, skb, 0, type, (uint8)ack, TRUE);
+
+		/* skb can be null here. do null check if skb is used */
 	} else {
-		DHD_DBG_PKT_MON_RX(dhdp, (struct sk_buff *)pkt, type, TRUE);
+#ifdef DHD_PKT_LOGGING
+		/* Send Rx-ed 4HS packet in dongle to packet logging buffer */
+		if (skb && type == FRAME_TYPE_ETHERNET_II) {
+			eh = (struct ether_header *)skb->data;
+			ether_type = ntoh16(eh->ether_type);
+			DHD_PKTLOG_RX(dhdp, (struct sk_buff *)skb, skb->data, ether_type);
+		}
+#endif /* DHD_PKT_LOGGING */
+
+		/* Send Rx-ed mgmt frame and 4HS packet in dongle to upper layer */
+		DHD_DBG_PKT_MON_RX(dhdp, (struct sk_buff *)skb, type, TRUE);
+
+		/* skb can be null here. do null check if skb is used */
 	}
 }
 #endif /* DBG_PKT_MON && PCIE_FULL_DONGLE */
@@ -7216,7 +7248,7 @@ dhd_open(struct net_device *net)
 		dhd_irq_set_affinity(&dhd->pub, cpumask_of(0));
 #endif /* DHD_CONTROL_PCIE_CPUCORE_WIFI_TURNON */
 #if defined(BCMPCIE) && defined(DHDTCPACK_SUPPRESS)
-		dhd_tcpack_suppress_set(&dhd->pub, TCPACK_SUP_HOLD);
+		dhd_tcpack_suppress_set(&dhd->pub, TCPACK_SUP_OFF);
 #endif /* BCMPCIE && DHDTCPACK_SUPPRESS */
 #if defined(NUM_SCB_MAX_PROBE)
 		dhd_set_scb_probe(&dhd->pub);
@@ -24748,6 +24780,12 @@ dhd_get_reboot_status(struct dhd_pub *dhdp)
 	int restart_in_progress = 0;
 	restart_in_progress = OSL_ATOMIC_READ(dhdp->osh, &reboot_in_progress);
 	return restart_in_progress;
+}
+
+int
+dhd_get_module_exit_status(struct dhd_pub *dhdp)
+{
+	return OSL_ATOMIC_READ(dhdp->osh, &exit_in_progress);
 }
 
 /**

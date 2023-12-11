@@ -2894,6 +2894,9 @@ wl_cfgnan_set_awake_dws(struct net_device *ndev, nan_config_cmd_data_t *cmd_data
 		}
 	}
 
+	WL_INFORM_MEM(("awake dws 2g:%d 5g:%d\n", awake_dws->dw_interval_2g,
+			awake_dws->dw_interval_5g));
+
 	sub_cmd->id = htod16(WL_NAN_CMD_SYNC_AWAKE_DWS);
 	sub_cmd->len = sizeof(sub_cmd->u.options) +
 		sizeof(*awake_dws);
@@ -5704,6 +5707,9 @@ wl_cfgnan_sd_params_handler(struct net_device *ndev,
 	if (cmd_data->period) {
 		sd_params->awake_dw = cmd_data->period;
 	}
+
+	WL_INFORM_MEM(("cmd period:%d awake_dw:%d\n", cmd_data->period, sd_params->awake_dw));
+
 	sd_params->period = 1;
 
 	if (cmd_data->ttl) {
