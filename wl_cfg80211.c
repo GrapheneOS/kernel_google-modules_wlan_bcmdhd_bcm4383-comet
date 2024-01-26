@@ -1,7 +1,7 @@
 /*
  * Linux cfg80211 driver
  *
- * Copyright (C) 2023, Broadcom.
+ * Copyright (C) 2024, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -15058,11 +15058,17 @@ wl_handle_assoc_events(struct bcm_cfg80211 *cfg,
 			/* Intentional fall through */
 			BCM_FALLTHROUGH;
 		case WLC_E_ASSOC:
-			wl_get_auth_assoc_status(cfg, as.ndev, e, data);
 #ifdef AUTH_ASSOC_STATUS_EXT
 			if ((as.reason == 0) && (as.status != WLC_E_STATUS_SUCCESS)) {
 				wl_get_auth_assoc_status_ext(cfg, as.ndev, e);
 			}
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+			if (as.status != WLC_E_STATUS_SUCCESS) {
+				/* store the status for failure cases */
+				wl_cfgvif_update_assoc_fail_status(cfg, as.ndev, e);
+			}
+#else
+			wl_get_auth_assoc_status(cfg, as.ndev, e, data);
 #endif	/* AUTH_ASSOC_STATUS_EXT */
 			break;
 		case WLC_E_ASSOC_RESP_IE:
@@ -16581,6 +16587,13 @@ wl_fillup_conn_resp_params(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	}
 
 	resp_params = (struct cfg80211_connect_resp_params *)params;
+
+	/* If we have cached cfg80211 status, update it */
+	if (status && sec->cfg80211_assoc_status) {
+		status = sec->cfg80211_assoc_status;
+		resp_params->timeout_reason = sec->cfg80211_timeout;
+	}
+
 	resp_params->status = status;
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)) || defined(WL_MLO_BKPORT)
 	netinfo = wl_get_netinfo_by_netdev(cfg, ndev);
@@ -16783,7 +16796,7 @@ wl_bss_connect_done(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	if (completed) {
 		status = WLAN_STATUS_SUCCESS;
 	} else if (sec->auth_assoc_res_status) {
-			status = sec->auth_assoc_res_status;
+		status = sec->auth_assoc_res_status;
 	} else {
 		status = WLAN_STATUS_UNSPECIFIED_FAILURE;
 	}
@@ -23199,9 +23212,12 @@ return ret;
 void wl_cfg80211_clear_security(struct bcm_cfg80211 *cfg)
 {
 	struct net_device *dev = bcmcfg_to_prmry_ndev(cfg);
+	struct wl_security *sec = wl_read_prof(cfg, dev, WL_PROF_SEC);
 	int err;
 
-	/* Clear the security settings on the primary Interface */
+	/* Clear the security settings */
+	bzero(sec, sizeof(struct wl_security));
+
 	err = wldev_iovar_setint(dev, "wsec", 0);
 	if (unlikely(err)) {
 		WL_ERR(("wsec clear failed \n"));
@@ -25691,6 +25707,10 @@ get_dpp_pa_ftype(enum wl_dpp_ftype ftype)
 			return "DPP_AUTH_RESP";
 		case DPP_AUTH_CONF:
 			return "DPP_AUTH_CONF";
+		case DPP_CONFIGURATION_RESULT:
+			return "DPP_CONFIGURATION_RESULT";
+		case DPP_CONFIGURATION_STATUS_RESULT:
+			return "DPP_CONFIGURATION_STATUS_RESULT";
 		default:
 			return "Unkown DPP frame";
 	}
@@ -26647,6 +26667,7 @@ wl_get_auth_assoc_status_ext(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		WL_ERR(("sec is NULL\n"));
 		return 0;
 	}
+
 	switch (event) {
 		case WLC_E_AUTH:
 			if (ntoh32(e->auth_type) == DOT11_SAE) {

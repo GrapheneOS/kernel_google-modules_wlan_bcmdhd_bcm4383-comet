@@ -1,7 +1,7 @@
 /*
  * Wifi Virtual Interface implementaion
  *
- * Copyright (C) 2023, Broadcom.
+ * Copyright (C) 2024, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -329,4 +329,8 @@ extern bool wl_cfgvif_is_scc_valid(chanspec_t sta_chanspec,
 		chanspec_t chspec, wl_chan_info_t *wl_chaninfo);
 extern s32 wl_cfgvif_get_ml_scc_channel_array(struct bcm_cfg80211 *cfg,
 	wl_chan_info_t *wl_chaninfo);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+extern s32 wl_cfgvif_update_assoc_fail_status(struct bcm_cfg80211 *cfg,
+	struct net_device *ndev, const wl_event_msg_t *e);
+#endif /* LINUX_VER >= 5.4 */
 #endif /* _wl_cfgvif_h_ */

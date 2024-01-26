@@ -1,7 +1,7 @@
 /*
  * Linux cfg80211 driver
  *
- * Copyright (C) 2023, Broadcom.
+ * Copyright (C) 2024, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -961,7 +961,8 @@ enum wl_dpp_ftype {
     DPP_PKEX_EX_RESP = 8,
     DPP_PKEX_COMMIT_REVEAL_REQ = 9,
     DPP_PKEX_COMMIT_REVEAL_RESP = 10,
-    DPP_CONFIGURATION_RESULT = 11
+    DPP_CONFIGURATION_RESULT = 11,
+    DPP_CONFIGURATION_STATUS_RESULT = 12
 };
 
 /* DPP Public Action Frame */
@@ -1276,6 +1277,8 @@ struct wl_security {
 	u32 fw_auth;
 	u32 fw_wsec;
 	u32 fw_mfp;
+	s32 cfg80211_assoc_status;
+	s32 cfg80211_timeout;
 };
 
 /* ibss information for currently joined ibss network */
