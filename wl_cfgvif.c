@@ -1,7 +1,7 @@
 /*
  * Wifi Virtual Interface implementaion
  *
- * Copyright (C) 2023, Broadcom.
+ * Copyright (C) 2024, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -9357,3 +9357,65 @@ wl_cfgvif_is_scc_valid(chanspec_t sta_chanspec, chanspec_t chspec, wl_chan_info_
 	}
 	return FALSE;
 }
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+s32
+wl_cfgvif_update_assoc_fail_status(struct bcm_cfg80211 *cfg, struct net_device *ndev,
+	const wl_event_msg_t *e)
+{
+	u32 event = ntoh32(e->event_type);
+	s32 status = ntoh32(e->status);
+	s32 reason = ntoh32(e->reason);
+	s32 auth_type = ntoh32(e->auth_type);
+	struct wl_security *sec = wl_read_prof(cfg, ndev, WL_PROF_SEC);
+	s32 assoc_status = WLAN_STATUS_UNSPECIFIED_FAILURE;
+	s32 timeout_reason = 0;
+
+	if (!sec || (status == WLC_E_STATUS_SUCCESS)) {
+		WL_ERR(("invalid arg! status:%d\n", status));
+		return 0;
+	}
+
+	/* @status: Status code, %WLAN_STATUS_SUCCESS for successful connection, use
+	 * WLAN_STATUS_UNSPECIFIED_FAILURE if your device cannot give you
+	 * the real status code for failures. If this call is used to report a
+	 * failure due to a timeout (e.g., not receiving an Authentication frame
+	 * from the AP) instead of an explicit rejection by the AP, -1 is used to
+	 * indicate that this is a failure, but without a status code.
+	 * @timeout_reason is used to report the reason for the timeout in that
+	 * case.
+	 */
+	switch (event) {
+		case WLC_E_AUTH:
+			if ((status == WLC_E_STATUS_TIMEOUT) ||
+					(status == WLC_E_STATUS_NO_ACK)) {
+				WL_DBG_MEM(("AUTH timeout\n"));
+				assoc_status = -1;
+				timeout_reason = NL80211_TIMEOUT_AUTH;
+			} else if (reason) {
+				/* For WLC_E_AUTH e->reason carries the dot11 status */
+				assoc_status = reason;
+			}
+			break;
+		case WLC_E_ASSOC:
+			if ((status == WLC_E_STATUS_TIMEOUT) ||
+					(status == WLC_E_STATUS_NO_ACK)) {
+				WL_DBG_MEM(("ASSOC timeout\n"));
+				assoc_status = -1;
+				timeout_reason = NL80211_TIMEOUT_ASSOC;
+			} else if (auth_type) {
+				/* WLC_E_ASSOC e->auth_type carries dot11 assoc status */
+				assoc_status = e->auth_type;
+			}
+			break;
+		default:
+			break;
+	}
+
+	WL_DBG_MEM(("caching assoc_status: event %d"
+		"assoc_status %d to_reason %d\n", event, status, reason));
+	sec->cfg80211_assoc_status = assoc_status;
+	sec->cfg80211_timeout = timeout_reason;
+	return 0;
+}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)) */

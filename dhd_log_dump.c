@@ -1,7 +1,7 @@
 /*
  * log_dump - debugability support for dumping logs to file
  *
- * Copyright (C) 2023, Broadcom.
+ * Copyright (C) 2024, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1917,7 +1917,7 @@ dhd_log_dump_init(dhd_pub_t *dhd)
 	* It should have a size equal to
 	* MAX(largest possible ecntr record, 'dhd dump' data size)
 	*/
-	dhd->concise_dbg_buf = MALLOC(dhd->osh, CONCISE_DUMP_BUFLEN);
+	dhd->concise_dbg_buf = VMALLOCZ(dhd->osh, CONCISE_DUMP_BUFLEN);
 	if (!dhd->concise_dbg_buf) {
 		DHD_ERROR(("%s: unable to alloc mem for concise debug info !\n",
 				__FUNCTION__));
@@ -1983,7 +1983,7 @@ fail:
 #endif /* DHD_EVENT_LOG_FILTER */
 
 	if (dhd->concise_dbg_buf) {
-		MFREE(dhd->osh, dhd->concise_dbg_buf, CONCISE_DUMP_BUFLEN);
+		VMFREE(dhd->osh, dhd->concise_dbg_buf, CONCISE_DUMP_BUFLEN);
 	}
 #ifdef EWP_DACS
 	if (dhd->ewphw_initlog_buf) {
@@ -2045,7 +2045,7 @@ dhd_log_dump_deinit(dhd_pub_t *dhd)
 	BCM_REFERENCE(ring);
 
 	if (dhd->concise_dbg_buf) {
-		MFREE(dhd->osh, dhd->concise_dbg_buf, CONCISE_DUMP_BUFLEN);
+		VMFREE(dhd->osh, dhd->concise_dbg_buf, CONCISE_DUMP_BUFLEN);
 		dhd->concise_dbg_buf = NULL;
 	}
 #ifdef EWP_DACS
