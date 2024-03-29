@@ -719,6 +719,7 @@ wl_cfg80211_disc_if_mgmt(struct bcm_cfg80211 *cfg,
 				*/
 				BCM_FALLTHROUGH;
 			}
+			/* falls through */
 			case WL_IF_POLICY_DEFAULT: {
 				 if (sec_wl_if_type == WL_IF_TYPE_AP) {
 					WL_INFORM_MEM(("AP is active, cant support new iface\n"));
@@ -4811,18 +4812,17 @@ wl_cfg80211_start_ap(
  *      center frequencies present in 'preset_chandef' instead of using the
  *      hardcoded values in 'wl_cfg80211_set_channel()'.
  */
-#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0)) && !defined(WL_COMPAT_WIRELESS))
-	if ((err = wl_cfg80211_set_channel(wiphy, dev,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)) || defined(WL_MLO_BKPORT)
-		dev->ieee80211_ptr->u.ap.preset_chandef.chan,
-#else
-		dev->ieee80211_ptr->preset_chandef.chan,
-#endif /* LINUX_VERSION_CODE > KERNEL_VERSION(6, 0, 0) || WL_MLO_BKPORT */
-		NL80211_CHAN_HT20)) < 0) {
+ 	err = wl_cfg80211_set_channel(wiphy, dev, dev->ieee80211_ptr->u.ap.preset_chandef.chan,
+			NL80211_CHAN_HT20);
+#elif ((LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0)) && !defined(WL_COMPAT_WIRELESS))
+	err = wl_cfg80211_set_channel(wiphy, dev, dev->ieee80211_ptr->preset_chandef.chan,
+			NL80211_CHAN_HT20);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)) || defined(WL_MLO_BKPORT) */
+	if (err) {
 		WL_ERR(("Set channel failed \n"));
 		goto fail;
 	}
-#endif /* ((LINUX_VERSION >= VERSION(3, 6, 0) && !WL_COMPAT_WIRELESS) */
 
 	if ((err = wl_cfg80211_bcn_set_params(info, dev,
 		dev_role, bssidx)) < 0) {

@@ -24528,9 +24528,22 @@ dhd_dev_set_accel_force_reg_on(struct net_device *dev)
 {
 	dhd_info_t *dhd_info = *(dhd_info_t **)netdev_priv(dev);
 
-	if (dhd_info && !dhd_info->wl_accel_force_reg_on) {
+	if (dhd_info) {
 		DHD_PRINT(("%s: set force reg on\n", __FUNCTION__));
 		dhd_info->wl_accel_force_reg_on = TRUE;
+	}
+
+	return BCME_OK;
+}
+
+int
+dhd_dev_clear_accel_force_reg_on(struct net_device *dev)
+{
+	dhd_info_t *dhd_info = *(dhd_info_t **)netdev_priv(dev);
+
+	if (dhd_info) {
+		DHD_PRINT(("%s: clear force reg on\n", __FUNCTION__));
+		dhd_info->wl_accel_force_reg_on = FALSE;
 	}
 
 	return BCME_OK;

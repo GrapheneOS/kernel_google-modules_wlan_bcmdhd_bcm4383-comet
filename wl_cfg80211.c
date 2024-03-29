@@ -1109,6 +1109,7 @@ static struct ieee80211_sband_iftype_data __wl_he_sta_cap = {
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0) */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0)) || defined(WL_MLO_BKPORT)
 	/* Android framework looks for eht capability for enabling EHT related code/functionality */
+#ifndef DISABLE_EHT_CAP
 	.eht_cap = {
 		.has_eht = true,
 		.eht_cap_elem = {
@@ -1171,6 +1172,7 @@ static struct ieee80211_sband_iftype_data __wl_he_sta_cap = {
 			}
 		}
 	},
+#endif /* DISABLE_EHT_CAP */
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0)) || WL_MLO_BKPORT */
 };
 
@@ -5580,7 +5582,16 @@ wl_set_key_mgmt(struct net_device *dev, struct cfg80211_connect_params *sme,
 	if (sme->crypto.n_akm_suites) {
 		WL_DBG(("No of akms %d 0x%x 0x%x\n", sme->crypto.n_akm_suites,
 			sme->crypto.akm_suites[0], sme->crypto.akm_suites[1]));
-		if (sme->crypto.n_akm_suites > 1) {
+		/* akm_suites[0] = AKM for targeted AP
+		 * akm_suites[1-2] = allowed key_mgmt for seamless roam
+		 * SAE-EXT seamless roam is not supported
+		 * and hence fall into single AKM handling mode
+		 */
+		if (sme->crypto.n_akm_suites > 1 &&
+#ifndef SUPPORT_SAE_EXT_CROSS_AKM
+			(sme->crypto.akm_suites[0] != WLAN_AKM_SUITE_SAE_EXT_PSK) &&
+#endif /* SUPPORT_SAE_EXT_CROSS_AKM */
+			TRUE) {
 			err = wl_set_multi_akm(dev, cfg, sme, assoc_info);
 			if (unlikely(err)) {
 				WL_ERR(("Failed to set multi akm key mgmt err = %d\n", err));
@@ -12642,13 +12653,22 @@ void wl_config_custom_regulatory(struct wiphy *wiphy)
 #if defined(WL_SELF_MANAGED_REGDOM) && \
 	(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0))
 	/* Use self managed regulatory domain */
-	wiphy->regulatory_flags |= REGULATORY_WIPHY_SELF_MANAGED;
+	wiphy->regulatory_flags |=
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(6, 1, 38))
+		REGULATORY_IGNORE_STALE_KICKOFF |
+#endif /* LINUX_VERSION_CODE <= KERNEL_VERSION(6, 1, 38) */
+		REGULATORY_WIPHY_SELF_MANAGED;
 	WL_DBG(("Self managed regdom\n"));
 	return;
 #else /* WL_SELF_MANAGED_REGDOM && KERNEL >= 4.0 */
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0))
-	wiphy->regulatory_flags |= REGULATORY_CUSTOM_REG;
+	wiphy->regulatory_flags |=
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 19, 0)) &&
+	(LINUX_VERSION_CODE <= KERNEL_VERSION(6, 1, 38))
+		REGULATORY_IGNORE_STALE_KICKOFF |
+#endif /* LINUX_VERSION_CODE >= (3, 19, 0) && LINUX_VERSION_CODE <= (6, 1, 38) */
+		REGULATORY_CUSTOM_REG;
 #else /* KERNEL VER >= 3.14 */
 	wiphy->flags |= WIPHY_FLAG_CUSTOM_REGULATORY;
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0) */
@@ -18545,11 +18565,8 @@ static s32 wl_cfg80211_attach_post(struct net_device *ndev)
 #if defined(WL_ENABLE_P2P_IF)
 				if (cfg->p2p_net) {
 					/* Update MAC addr for p2p0 interface here. */
-					uint8 temp_addr[ETH_ALEN];
-					memcpy(temp_addr, ndev->dev_addr, ETH_ALEN);
-					temp_addr |= 0x02;
-					NETDEV_ADDR_SET(cfg->p2p_net, ETH_ALEN,
-							temp_addr, ETH_ALEN)
+					memcpy(cfg->p2p_net->dev_addr, ndev->dev_addr, ETH_ALEN);
+					cfg->p2p_net->dev_addr[0] |= 0x02;
 					WL_ERR(("%s: p2p_dev_addr="MACDBG "\n",
 						cfg->p2p_net->name,
 						MAC2STRDBG(cfg->p2p_net->dev_addr)));

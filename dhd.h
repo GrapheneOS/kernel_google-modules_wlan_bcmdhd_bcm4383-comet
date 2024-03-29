@@ -4827,6 +4827,7 @@ static INLINE void dhd_handle_pktdata(dhd_pub_t *dhdp, int ifidx, void *pkt, uin
 #endif /* __linux */
 #if defined(WLAN_ACCEL_BOOT)
 extern int dhd_dev_set_accel_force_reg_on(struct net_device *dev);
+extern int dhd_dev_clear_accel_force_reg_on(struct net_device *dev);
 #endif /* WLAN_ACCEL_BOOT */
 
 #if defined(BCMPCIE) && defined(__linux__)

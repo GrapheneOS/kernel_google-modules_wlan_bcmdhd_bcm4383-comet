@@ -379,8 +379,12 @@ ifneq ($(CONFIG_SOC_GOOGLE),)
     DHDCFLAGS += -DWL_MLO_BKPORT_NEW_PORT_AUTH
     # CROSS AKM related back port changes
     DHDCFLAGS += -DWL_CROSS_AKM_BKPORT
-    # ch_switch_notify back port changes
-    DHDCFLAGS += -DWL_CH_SWITCH_BKPORT
+    ifneq ($(filter y, $(CONFIG_BCM4398) $(CONFIG_BCM4390) $(CONFIG_BCM4383)),)
+        # ch_switch_notify back port changes
+        DHDCFLAGS += -DWL_CH_SWITCH_BKPORT
+        # External auth request back port changes
+        # DHDCFLAGS += -DWL_EXT_AUTH_BKPORT
+    endif
     DHDCFLAGS := $(filter-out -DDHD_DUMP_FILE_WRITE_FROM_KERNEL ,$(DHDCFLAGS))
 endif
 
@@ -992,6 +996,7 @@ ifneq ($(CONFIG_SOC_GOOGLE),)
 	    BCM_WLAN_CHIP_SUFFIX = 4383
 	    DHDCFLAGS += -DBCMPCI_DEV_ID=0x4449
 	    DHDCFLAGS += -DBCMPCI_NOOTP_DEV_ID=0x4383 -DBCM4383_CHIP_DEF
+	    DHDCFLAGS += -DDISABLE_EHT_CAP
       endif
     endif
     ifneq ($(CONFIG_BCMDHD_PCIE),)
