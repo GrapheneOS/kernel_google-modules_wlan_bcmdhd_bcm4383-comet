@@ -7024,12 +7024,21 @@ wl_cfgnan_init(struct bcm_cfg80211 *cfg)
 	uint8 resp_buf[NAN_IOCTL_BUF_SIZE];
 	uint8 buf[NAN_IOCTL_BUF_SIZE];
 	bcm_iov_batch_buf_t *nan_buf = (bcm_iov_batch_buf_t*)buf;
+	dhd_pub_t *dhd = (dhd_pub_t *)(cfg->pub);
 
 	NAN_DBG_ENTER();
+
 	if (cfg->nancfg->nan_init_state) {
 		WL_ERR(("nan initialized/nmi exists\n"));
 		return BCME_OK;
 	}
+
+	if (FW_SUPPORTED(dhd, sdb_modesw)) {
+		/* cancel scan to sync the mode for dynamic mode chips */
+		WL_DBG_MEM(("sdb_modesw: Aborting Scan for Initializing NAN\n"));
+		wl_cfgscan_cancel_scan(cfg);
+	}
+
 	nan_buf->version = htol16(WL_NAN_IOV_BATCH_VERSION);
 	nan_buf->count = 0;
 	nan_buf_size -= OFFSETOF(bcm_iov_batch_buf_t, cmds[0]);

@@ -1109,6 +1109,7 @@ static struct ieee80211_sband_iftype_data __wl_he_sta_cap = {
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0) */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0)) || defined(WL_MLO_BKPORT)
 	/* Android framework looks for eht capability for enabling EHT related code/functionality */
+#ifndef DISABLE_EHT_CAP
 	.eht_cap = {
 		.has_eht = true,
 		.eht_cap_elem = {
@@ -1171,6 +1172,7 @@ static struct ieee80211_sband_iftype_data __wl_he_sta_cap = {
 			}
 		}
 	},
+#endif /* DISABLE_EHT_CAP */
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0)) || WL_MLO_BKPORT */
 };
 
