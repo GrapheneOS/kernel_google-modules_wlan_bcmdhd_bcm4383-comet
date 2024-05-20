@@ -31,6 +31,7 @@
 #include <osl.h>
 #include <linux/kernel.h>
 #include <linux/vmalloc.h>
+#include <bcmstdlib_s.h>
 
 #include <bcmutils.h>
 #include <bcmwifi_channels.h>
@@ -2313,6 +2314,34 @@ wl_cfgvendor_rtt_sort_targets(rtt_config_params_t *rtt_param)
 	}
 }
 
+static void
+wl_cfgvendor_filter_out_6g_targets(rtt_config_params_t *rtt_param)
+{
+	rtt_target_info_t* rtt_target = NULL;
+	int i;
+	int valid_idx = 0;
+	int ori_cnt = rtt_param->rtt_target_cnt;
+
+	/* filter out 6G targets
+	 * valid_idx means the pos in memory to be filled with valid target
+	 * the pos is where the 6g target were previously located
+	 */
+	rtt_target = rtt_param->target_info;
+	for (i = 0; i < rtt_param->rtt_target_cnt; i++) {
+		if (CHSPEC_BAND(rtt_target[i].chanspec) == WL_CHANSPEC_BAND_6G) {
+			continue;
+		} else {
+			memmove_s(&rtt_target[valid_idx], sizeof(rtt_target_info_t),
+				&rtt_target[i], sizeof(rtt_target_info_t));
+			valid_idx++;
+		}
+	}
+	/* should be updated by the number reduced */
+	rtt_param->rtt_target_cnt = valid_idx;
+	WL_DBG_MEM(("count before:%d after filtering out 6g rtt target:%d\n",
+		ori_cnt, rtt_param->rtt_target_cnt));
+}
+
 static int
 wl_cfgvendor_rtt_set_config(struct wiphy *wiphy, struct wireless_dev *wdev,
 	const void *data, int len) {
@@ -2514,6 +2543,15 @@ wl_cfgvendor_rtt_set_config(struct wiphy *wiphy, struct wireless_dev *wdev,
 	WL_DBG(("leave :target_cnt : %d\n", rtt_param.rtt_target_cnt));
 	/* sort targets to minimize channel switches */
 	wl_cfgvendor_rtt_sort_targets(&rtt_param);
+
+	/* filter out 6G targets */
+	wl_cfgvendor_filter_out_6g_targets(&rtt_param);
+	if (rtt_param.rtt_target_cnt <= 0) {
+		WL_ERR(("No valid targets target_cnt:%d\n", rtt_param.rtt_target_cnt));
+		err = -EINVAL;
+		goto exit;
+	}
+
 	if (dhd_dev_rtt_set_cfg(bcmcfg_to_prmry_ndev(cfg), &rtt_param) < 0) {
 		WL_ERR(("Could not set RTT configuration\n"));
 		err = -EINVAL;
@@ -6880,7 +6918,6 @@ wl_cfgvendor_nan_start_handler(struct wiphy *wiphy,
 	nan_hal_resp_t nan_req_resp;
 	uint32 nan_attr_mask = 0;
 	wl_nancfg_t *nancfg = cfg->nancfg;
-	dhd_pub_t *dhd = (dhd_pub_t *)(cfg->pub);
 
 	wdev = bcmcfg_to_prmry_wdev(cfg);
 	cmd_data = (nan_config_cmd_data_t *)MALLOCZ(cfg->osh, sizeof(*cmd_data));
@@ -6895,12 +6932,6 @@ wl_cfgvendor_nan_start_handler(struct wiphy *wiphy,
 	if (ret != BCME_OK) {
 		WL_ERR(("failed to disable nan, error[%d]\n", ret));
 		goto exit;
-	}
-
-	if (FW_SUPPORTED(dhd, sdb_modesw)) {
-		/* cancel scan to sync the mode for 4383 */
-		WL_DBG_MEM(("sdb_modesw: Aborting Scan for starting NAN\n"));
-		wl_cfgscan_cancel_scan(cfg);
 	}
 
 	bzero(&nan_req_resp, sizeof(nan_req_resp));
