@@ -413,11 +413,6 @@ dhd_get_platform_naming_for_nvram_clmblob_file(download_type_t component, char *
 		return BCME_ERROR;
 	}
 
-	if (hw_stage_val < EVT) {
-		DHD_ERROR(("No multi-NVRAM/CLM support on Proto/Dev device\n"));
-		return BCME_ERROR;
-	}
-
 	if (component == NVRAM) {
 #ifdef DHD_LINUX_STD_FW_API
 		nvram_clmblob_file = DHD_NVRAM_NAME;

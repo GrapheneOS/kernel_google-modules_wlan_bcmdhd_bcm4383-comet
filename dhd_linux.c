@@ -6500,15 +6500,15 @@ int
 dhd_stop(struct net_device *net)
 {
 	int ifidx = 0;
-#if defined(CONFIG_IPV6) && defined(IPV6_NDO_SUPPORT)
-	int ret = 0;
-#endif /* CONFIG_IPV6 && IPV6_NDO_SUPPORT */
 	bool skip_reset = false;
 #ifdef WL_CFG80211
 	unsigned long flags = 0;
 #ifdef WL_STATIC_IF
 	struct bcm_cfg80211 *cfg = wl_get_cfg(net);
 #endif /* WL_STATIC_IF */
+#if defined(CONFIG_IPV6) && defined(IPV6_NDO_SUPPORT)
+	int ret = 0;
+#endif /* CONFIG_IPV6 && IPV6_NDO_SUPPORT */
 #endif /* WL_CFG80211 */
 	dhd_info_t *dhd = DHD_DEV_INFO(net);
 	int timeleft = 0;
