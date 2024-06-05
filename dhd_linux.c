@@ -16609,12 +16609,12 @@ done:
 	return ret;
 }
 
-int
+uint64
 dhd_dev_get_feature_set(struct net_device *dev)
 {
 	dhd_info_t *ptr = *(dhd_info_t **)netdev_priv(dev);
 	dhd_pub_t *dhd = (&ptr->pub);
-	int feature_set = 0;
+	uint64 feature_set = 0;
 
 	/* tdls capability or othters can be missed because of initialization */
 	if (dhd_get_fw_capabilities(dhd) < 0) {
@@ -16700,14 +16700,20 @@ dhd_dev_get_feature_set(struct net_device *dev)
 #ifdef WL_LATENCY_MODE
 	feature_set |= WIFI_FEATURE_SET_LATENCY_MODE;
 #endif /* WL_LATENCY_MODE */
+
+#ifdef WL_AGGRESSIVE_ROAM
+	feature_set |= WIFI_FEATURE_ROAMING_MODE_CONTROL;
+#endif /* WL_AGGRESSIVE_ROAM */
+
+	DHD_PRINT(("Supported feature_set %llx\n", feature_set));
 	return feature_set;
 }
 
-int
+uint64
 dhd_dev_get_feature_set_matrix(struct net_device *dev, int num)
 {
-	int feature_set_full;
-	int ret = 0;
+	uint64 feature_set_full;
+	uint64 ret = 0;
 
 	feature_set_full = dhd_dev_get_feature_set(dev);
 
@@ -16752,6 +16758,15 @@ dhd_dev_get_feature_set_matrix(struct net_device *dev, int num)
 		break;
 	}
 
+	if (ret > WIFI_FEATURE_INVALID) {
+		DHD_ERROR(("%s: Out of range feature_set_matrix: %llx\n", __FUNCTION__, ret));
+		ret = WIFI_FEATURE_INVALID;
+		/*
+		 * Max supported feature set matrix is upto u32,
+		 * beyond it requires further changes.
+		 *
+		 */
+	}
 	return ret;
 }
 
@@ -20186,6 +20201,7 @@ dhd_mem_dump(void *handle, void *event_info, u8 event)
 	char pc_fn[DHD_FUNC_STR_LEN] = "\0";
 	char lr_fn[DHD_FUNC_STR_LEN] = "\0";
 	trap_t *tr;
+	uint32 uc_status;
 	bool collect_coredump = FALSE;
 #endif /* DHD_COREDUMP */
 	uint32 memdump_type;
@@ -20212,6 +20228,9 @@ dhd_mem_dump(void *handle, void *event_info, u8 event)
 #ifdef DHD_SSSR_DUMP
 	collect_sssr = dhdp->collect_sssr;
 #endif /* DHD_SSSR_DUMP */
+#ifdef DHD_COREDUMP
+	uc_status = dhdp->uc_status;
+#endif /* DHD_COREDUMP */
 
 	DHD_GENERAL_LOCK(dhdp, flags);
 	if (DHD_BUS_CHECK_DOWN_OR_DOWN_IN_PROGRESS(dhdp)) {
@@ -20376,6 +20395,9 @@ dhd_mem_dump(void *handle, void *event_info, u8 event)
 			ltoh32(tr->epc), pc_fn, ltoh32(tr->r14), lr_fn);
 		sprintf(&dhdp->memdump_str[strlen(dhdp->memdump_str)], "_%.79s_%.79s",
 				pc_fn, lr_fn);
+
+		/* append additional status code with tag string */
+		dhd_coredump_add_status(dhdp->memdump_str, "UC", uc_status);
 	}
 	DHD_PRINT(("%s: dump reason: %s\n", __FUNCTION__, dhdp->memdump_str));
 
