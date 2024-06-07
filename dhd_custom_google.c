@@ -189,7 +189,7 @@ sku_info_t sku_table[] = {
 	{ {"G1AZG"}, {"EU"} },
 	{ {"G9BQD"}, {"NA"} }
 };
-#endif
+#endif /* BCM4383_CHIP_DEF */
 
 static int
 dhd_wlan_get_mac_addr(unsigned char *buf)

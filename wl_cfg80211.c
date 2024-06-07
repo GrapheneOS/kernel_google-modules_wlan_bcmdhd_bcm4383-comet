@@ -10102,6 +10102,18 @@ wl_apply_per_sta_conn_suspend_settings(struct bcm_cfg80211 *cfg,
 		}
 	}
 #endif /* CONFIG_SILENT_ROAM */
+
+#ifdef APF
+	/* For only primary STA interface */
+	if (dev == cfg->inet_ndev) {
+		if (suspend) {
+			dhd_dev_apf_enable_filter(dev);
+		} else {
+			dhd_dev_apf_disable_filter(dev);
+		}
+	}
+#endif /* APF */
+
 	return BCME_OK;
 }
 
