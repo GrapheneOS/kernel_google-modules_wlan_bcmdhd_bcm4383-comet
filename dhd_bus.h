@@ -455,6 +455,9 @@ int dhd_bus_get_ewp_etb_config(struct dhd_bus *bus);
 int dhd_bus_get_ewp_etb_dump(struct dhd_bus *bus, uint8 *buf, uint bufsize);
 int dhd_bus_alloc_ewp_etb_config_mem(struct dhd_bus *bus);
 void dhd_bus_dealloc_ewp_etb_config_mem(struct dhd_bus *bus);
+#ifdef DHD_COREDUMP
+extern void dhd_coredump_add_status(char* buf, char *err_tag, uint32 status);
+#endif /* DHD_COREDUMP */
 
 void dhd_bus_update_flow_watermark_stats(struct dhd_bus *bus, uint16 flowid, uint16 rd,
 	uint16 wr, uint16 ringsz, bool upd_watermark);

@@ -122,6 +122,8 @@ struct wl_ibss;
 #ifdef OEM_ANDROID
 /* mandatory for Android 11 */
 #define WL_ACT_FRAME_MAC_RAND
+/* Android 15 req */
+#define WL_AGGRESSIVE_ROAM
 #endif
 
 #if defined(WL_6G_BAND) && !defined(WL_DISABLE_SOFTAP_6G)
@@ -821,6 +823,8 @@ do {									\
 #define WLAN_CIPHER_SUITE_PMK             0x00904C00
 #endif /* WLAN_CIPHER_SUITE_PMK */
 
+#define WLAN_AKM_SUITE_PSK_VER_1          0x0050F202
+
 #ifndef WLAN_AKM_SUITE_FT_8021X
 #define WLAN_AKM_SUITE_FT_8021X	          0x000FAC03
 #endif /* WLAN_AKM_SUITE_FT_8021X */
@@ -1454,6 +1458,7 @@ struct net_info {
 	u8 *qos_up_table;
 	bool reg_update_reqd;
 	bool td_policy_set;
+	bool aggressive_roam;
 };
 
 #ifdef WL_BCNRECV
@@ -2023,6 +2028,7 @@ typedef struct wlcfg_assoc_info {
 	chanspec_t chanspecs[MAX_ROAM_CHANNEL];
 	bool auto_wpa_enabled;	/* auto_wpa enabled for multi AKM */
 	bool seamless_psk;	/* Multi-AKMs needing seamless PSK */
+	bool skip_seamless_psk;
 } wlcfg_assoc_info_t;
 
 #define MAX_NUM_OF_ASSOCIATED_DEV       64
@@ -3611,7 +3617,13 @@ struct net_device *wl_cfg80211_get_remain_on_channel_ndev(struct bcm_cfg80211 *c
 extern int wl_cfg80211_get_ioctl_version(void);
 extern int wl_cfg80211_enable_roam_offload(struct net_device *dev, int enable);
 #ifdef WBTEXT
+typedef struct wl_wbtext_bssid {
+	struct ether_addr ea;
+	struct list_head list;
+} wl_wbtext_bssid_t;
+
 extern s32 wl_cfg80211_wbtext_set_default(struct net_device *ndev);
+extern void wl_cfg80211_wbtext_reset_conf(struct bcm_cfg80211 *cfg, struct net_device *ndev);
 extern s32 wl_cfg80211_wbtext_config(struct net_device *ndev, char *data,
 		char *command, int total_len);
 extern int wl_cfg80211_wbtext_weight_config(struct net_device *ndev, char *data,
@@ -3619,7 +3631,20 @@ extern int wl_cfg80211_wbtext_weight_config(struct net_device *ndev, char *data,
 extern int wl_cfg80211_wbtext_table_config(struct net_device *ndev, char *data,
 		char *command, int total_len);
 extern s32 wl_cfg80211_wbtext_delta_config(struct net_device *ndev, char *data,
-		char *command, int total_len);
+	char *command, int total_len);
+
+extern void wl_cfg80211_wbtext_update_rcc(struct bcm_cfg80211 *cfg, struct net_device *dev);
+extern bool wl_cfg80211_wbtext_check_bssid_list(struct bcm_cfg80211 *cfg, struct ether_addr *ea);
+extern bool wl_cfg80211_wbtext_add_bssid_list(struct bcm_cfg80211 *cfg, struct ether_addr *ea);
+extern void wl_cfg80211_wbtext_clear_bssid_list(struct bcm_cfg80211 *cfg);
+extern bool wl_cfg80211_wbtext_send_nbr_req(struct bcm_cfg80211 *cfg, struct net_device *dev,
+	struct wl_profile *profile);
+extern bool wl_cfg80211_wbtext_send_btm_query(struct bcm_cfg80211 *cfg, struct net_device *dev,
+	struct wl_profile *profile);
+extern void wl_cfg80211_wbtext_set_wnm_maxidle(struct bcm_cfg80211 *cfg, struct net_device *dev);
+extern int wl_cfg80211_recv_nbr_resp(struct net_device *dev, uint8 *body, uint body_len);
+extern s32 wl_wbtext_init(struct bcm_cfg80211 *cfg);
+extern void wl_wbtext_deinit(struct bcm_cfg80211 *cfg);
 #endif /* WBTEXT */
 extern s32 wl_cfg80211_get_band_chanspecs(struct net_device *ndev,
 		void *buf, s32 buflen, chanspec_band_t band, bool acs_req);
