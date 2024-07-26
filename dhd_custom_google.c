@@ -189,7 +189,7 @@ sku_info_t sku_table[] = {
 	{ {"G1AZG"}, {"EU"} },
 	{ {"G9BQD"}, {"NA"} }
 };
-#endif /* BCM4383_CHIP_DEF */
+#endif
 
 static int
 dhd_wlan_get_mac_addr(unsigned char *buf)
@@ -410,11 +410,6 @@ dhd_get_platform_naming_for_nvram_clmblob_file(download_type_t component, char *
 
 	if (!platform_hw_info.avail_bmap) {
 		DHD_ERROR(("ext_name is not composed.\n"));
-		return BCME_ERROR;
-	}
-
-	if (hw_stage_val < EVT) {
-		DHD_ERROR(("No multi-NVRAM/CLM support on Proto/Dev device\n"));
 		return BCME_ERROR;
 	}
 

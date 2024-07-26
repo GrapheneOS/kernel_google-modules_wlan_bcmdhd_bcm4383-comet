@@ -13959,7 +13959,7 @@ dhdpci_bus_read_frames(dhd_bus_t *bus)
 		DHD_RPM(("%s: Bus is in power save state (%d). "
 			"Skip processing rest of ring buffers.\n",
 			__FUNCTION__, bus->bus_low_power_state));
-		return more;
+		return FALSE;
 	}
 
 	/* update the flow ring cpls */
@@ -15194,19 +15194,6 @@ fail:
 #endif /* DHD_FW_COREDUMP && !OEM_ANDROID */
 	return ret;
 }
-
-#ifdef DHD_COREDUMP
-void
-dhd_coredump_add_status(char* buf, char *err_tag, uint32 status)
-{
-	int len;
-	if (status) {
-		len = strlen(buf);
-		snprintf(&buf[len], DHD_MEMDUMP_LONGSTR_LEN - len,
-			"_%s0x%x", err_tag, status);
-	}
-}
-#endif /* DHD_COREDUMP */
 
 #if defined(__linux__)
 /*

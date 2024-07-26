@@ -413,11 +413,11 @@ wl_cfgvendor_get_feature_set(struct wiphy *wiphy,
 {
 	int err = 0;
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
-	uint64 reply;
+	int reply;
 
 	reply = dhd_dev_get_feature_set(bcmcfg_to_prmry_ndev(cfg));
 
-	err =  wl_cfgvendor_send_cmd_reply(wiphy, &reply, sizeof(uint64));
+	err =  wl_cfgvendor_send_cmd_reply(wiphy, &reply, sizeof(int));
 	if (unlikely(err))
 		WL_ERR(("Vendor Command reply failed ret:%d \n", err));
 
@@ -431,7 +431,7 @@ wl_cfgvendor_get_feature_set_matrix(struct wiphy *wiphy,
 	int err = 0;
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
 	struct sk_buff *skb;
-	uint32 reply;
+	int reply;
 	int mem_needed, i;
 
 	mem_needed = VENDOR_REPLY_OVERHEAD +
@@ -3248,8 +3248,7 @@ exit:
 #ifdef ROAMEXP_SUPPORT
 typedef enum {
 	FW_ROAMING_DISABLE,
-	FW_ROAMING_ENABLE,
-	ROAMING_AGGRESSIVE
+	FW_ROAMING_ENABLE
 } fw_roaming_state_t;
 
 static int
@@ -3259,7 +3258,7 @@ wl_cfgvendor_set_fw_roaming_state(struct wiphy *wiphy,
 	fw_roaming_state_t requested_roaming_state;
 	int type;
 	int err = 0;
-	wl_roam_conf_t roam_req = ROAM_CONF_INVALID;
+	wl_roam_conf_t roam_req;
 	struct bcm_cfg80211 *cfg = wl_get_cfg(wdev_to_ndev(wdev));
 
 	if (!data) {
@@ -3284,16 +3283,8 @@ wl_cfgvendor_set_fw_roaming_state(struct wiphy *wiphy,
 
 	if (requested_roaming_state == FW_ROAMING_ENABLE) {
 		roam_req = ROAM_CONF_ROAM_ENAB_REQ;
-#ifdef WL_AGGRESSIVE_ROAM
-		wl_cfgvif_enable_aggressive_roam(cfg, wdev->netdev, FALSE);
-#endif /* WL_AGGRESSIVE_ROAM */
 	} else if (requested_roaming_state == FW_ROAMING_DISABLE) {
 		roam_req = ROAM_CONF_ROAM_DISAB_REQ;
-#ifdef WL_AGGRESSIVE_ROAM
-	} else if (requested_roaming_state == ROAMING_AGGRESSIVE) {
-		roam_req = ROAM_CONF_ROAM_ENAB_REQ;
-		wl_cfgvif_enable_aggressive_roam(cfg, wdev->netdev, TRUE);
-#endif /* WL_AGGRESSIVE_ROAM */
 	} else {
 		WL_ERR(("unexpected roam_state_request:%d\n", requested_roaming_state));
 		return -EINVAL;
@@ -15339,9 +15330,6 @@ int wl_cfgvendor_attach(struct wiphy *wiphy, dhd_pub_t *dhd)
 	wiphy->vendor_events	= wl_vendor_events;
 	wiphy->n_vendor_events	= ARRAY_SIZE(wl_vendor_events);
 
-#ifdef DHD_ECNTRS_EXPOSED_DBGRING
-	dhd_os_dbg_register_callback(ECNTRS_RING_ID, wl_cfgvendor_dbg_ring_send_evt);
-#endif /* DHD_ECNTRS_EXPOSED_DBGRING */
 #ifdef DEBUGABILITY
 	dhd_os_dbg_register_callback(FW_VERBOSE_RING_ID, wl_cfgvendor_dbg_ring_send_evt);
 #ifdef DHD_DEBUGABILITY_EVENT_RING

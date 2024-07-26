@@ -2493,6 +2493,9 @@ static int dhd_set_suspend(int value, dhd_pub_t *dhd)
 				 */
 				dhd_enable_packet_filter(1, dhd);
 #endif /* PKT_FILTER_SUPPORT */
+#ifdef APF
+				dhd_dev_apf_enable_filter(dhd_linux_get_primary_netdev(dhd));
+#endif /* APF */
 #ifdef ARP_OFFLOAD_SUPPORT
 				if (dhd->arpoe_enable) {
 					dhd_arp_offload_enable(dhd, TRUE);
@@ -2591,6 +2594,9 @@ static int dhd_set_suspend(int value, dhd_pub_t *dhd)
 				/* disable pkt filter */
 				dhd_enable_packet_filter(0, dhd);
 #endif /* PKT_FILTER_SUPPORT */
+#ifdef APF
+				dhd_dev_apf_disable_filter(dhd_linux_get_primary_netdev(dhd));
+#endif /* APF */
 #ifdef PASS_ALL_MCAST_PKTS
 				allmulti = 1;
 				for (i = 0; i < DHD_MAX_IFS; i++) {
@@ -16603,12 +16609,12 @@ done:
 	return ret;
 }
 
-uint64
+int
 dhd_dev_get_feature_set(struct net_device *dev)
 {
 	dhd_info_t *ptr = *(dhd_info_t **)netdev_priv(dev);
 	dhd_pub_t *dhd = (&ptr->pub);
-	uint64 feature_set = 0;
+	int feature_set = 0;
 
 	/* tdls capability or othters can be missed because of initialization */
 	if (dhd_get_fw_capabilities(dhd) < 0) {
@@ -16694,20 +16700,14 @@ dhd_dev_get_feature_set(struct net_device *dev)
 #ifdef WL_LATENCY_MODE
 	feature_set |= WIFI_FEATURE_SET_LATENCY_MODE;
 #endif /* WL_LATENCY_MODE */
-
-#ifdef WL_AGGRESSIVE_ROAM
-	feature_set |= WIFI_FEATURE_ROAMING_MODE_CONTROL;
-#endif /* WL_AGGRESSIVE_ROAM */
-
-	DHD_PRINT(("Supported feature_set %llx\n", feature_set));
 	return feature_set;
 }
 
-uint64
+int
 dhd_dev_get_feature_set_matrix(struct net_device *dev, int num)
 {
-	uint64 feature_set_full;
-	uint64 ret = 0;
+	int feature_set_full;
+	int ret = 0;
 
 	feature_set_full = dhd_dev_get_feature_set(dev);
 
@@ -16752,15 +16752,6 @@ dhd_dev_get_feature_set_matrix(struct net_device *dev, int num)
 		break;
 	}
 
-	if (ret > WIFI_FEATURE_INVALID) {
-		DHD_ERROR(("%s: Out of range feature_set_matrix: %llx\n", __FUNCTION__, ret));
-		ret = WIFI_FEATURE_INVALID;
-		/*
-		 * Max supported feature set matrix is upto u32,
-		 * beyond it requires further changes.
-		 *
-		 */
-	}
 	return ret;
 }
 
@@ -17853,6 +17844,16 @@ dhd_dev_apf_add_filter(struct net_device *ndev, u8* program,
 	int ret;
 
 	DHD_APF_LOCK(ndev);
+
+	/* delete, if filter already exists */
+	if (dhdp->apf_set) {
+		ret = _dhd_apf_delete_filter(ndev, PKT_FILTER_APF_ID);
+		if (unlikely(ret)) {
+			DHD_ERROR(("%s: Failed to delete APF filter\n", __FUNCTION__));
+			goto exit;
+		}
+		dhdp->apf_set = FALSE;
+	}
 
 	ret = _dhd_apf_add_filter(ndev, PKT_FILTER_APF_ID, program, program_len);
 	if (ret) {
@@ -20185,9 +20186,7 @@ dhd_mem_dump(void *handle, void *event_info, u8 event)
 	char pc_fn[DHD_FUNC_STR_LEN] = "\0";
 	char lr_fn[DHD_FUNC_STR_LEN] = "\0";
 	trap_t *tr;
-	uint32 uc_status;
 	bool collect_coredump = FALSE;
-	char trap_str[DHD_TRAP_STR_LEN] = {0};
 #endif /* DHD_COREDUMP */
 	uint32 memdump_type;
 #ifdef DHD_SSSR_DUMP
@@ -20213,9 +20212,6 @@ dhd_mem_dump(void *handle, void *event_info, u8 event)
 #ifdef DHD_SSSR_DUMP
 	collect_sssr = dhdp->collect_sssr;
 #endif /* DHD_SSSR_DUMP */
-#ifdef DHD_COREDUMP
-	uc_status = dhdp->uc_status;
-#endif /* DHD_COREDUMP */
 
 	DHD_GENERAL_LOCK(dhdp, flags);
 	if (DHD_BUS_CHECK_DOWN_OR_DOWN_IN_PROGRESS(dhdp)) {
@@ -20373,28 +20369,20 @@ dhd_mem_dump(void *handle, void *event_info, u8 event)
 	bzero(dhdp->memdump_str, DHD_MEMDUMP_LONGSTR_LEN);
 	dhd_convert_memdump_type_to_str(memdump_type, dhdp->memdump_str,
 		DHD_MEMDUMP_LONGSTR_LEN, dhdp->debug_dump_subcmd);
-
-	if (dhdp->dongle_trap_occured) {
+	if (memdump_type == DUMP_TYPE_DONGLE_TRAP &&
+		dhdp->dongle_trap_occured == TRUE) {
 		tr = &dhdp->last_trap_info;
 		dhd_lookup_map(dhdp->osh, map_path,
 			ltoh32(tr->epc), pc_fn, ltoh32(tr->r14), lr_fn);
-		snprintf(trap_str, DHD_TRAP_STR_LEN, "_%.79s_%.79s", pc_fn, lr_fn);
-	}
-
-	if (memdump_type == DUMP_TYPE_DONGLE_TRAP &&
-		dhdp->dongle_trap_occured == TRUE) {
-		sprintf(&dhdp->memdump_str[strlen(dhdp->memdump_str)],
-			"%s", trap_str);
-
-		/* append additional status code with tag string */
-		dhd_coredump_add_status(dhdp->memdump_str, "UC", uc_status);
+		sprintf(&dhdp->memdump_str[strlen(dhdp->memdump_str)], "_%.79s_%.79s",
+				pc_fn, lr_fn);
 	}
 	DHD_PRINT(("%s: dump reason: %s\n", __FUNCTION__, dhdp->memdump_str));
 
 #ifdef DHD_SSSR_COREDUMP
 	/* Only for dongle trap case, generate coredump header and TLVs */
-	if (dhd_is_coredump_reqd(trap_str,
-		strnlen(trap_str, DHD_TRAP_STR_LEN), dhdp)) {
+	if (dhd_is_coredump_reqd(dhdp->memdump_str,
+		strnlen(dhdp->memdump_str, DHD_MEMDUMP_LONGSTR_LEN), dhdp)) {
 		ret = dhd_collect_coredump(dhdp, dump, collect_sssr);
 		if (ret == BCME_ERROR) {
 			DHD_ERROR(("%s: dhd_collect_coredump() failed.\n",
